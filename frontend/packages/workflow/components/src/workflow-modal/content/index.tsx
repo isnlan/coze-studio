@@ -26,10 +26,9 @@ import { useWorkflowStore } from '@coze-workflow/base/store';
 import {
   WorkflowMode,
   WorkFlowType,
-  Tag,
   BindBizType,
 } from '@coze-workflow/base/api';
-import { isGeneralWorkflow, workflowApi } from '@coze-workflow/base';
+import { isGeneralWorkflow } from '@coze-workflow/base';
 import { SearchNoResult } from '@coze-studio/components/search-no-result';
 import { I18n } from '@coze-arch/i18n';
 import { IconCozLoading } from '@coze-arch/coze-design/icons';
@@ -49,7 +48,6 @@ import {
   MineActiveEnum,
   type ProductInfo,
   WORKFLOW_LIST_STATUS_ALL,
-  WorkflowCategory,
   type WorkflowInfo,
   WorkflowModalFrom,
   type WorkFlowModalModeProps,
@@ -79,10 +77,6 @@ const WorkflowModalContent: FC<WorkFlowModalModeProps> = props => {
     pageSize: 10,
     enabled: context?.modalState.dataSourceType === DataSourceType.Workflow,
     from,
-    fetchWorkflowListApi:
-      context?.modalState?.workflowCategory !== WorkflowCategory.Example
-        ? workflowApi.GetWorkFlowList.bind(workflowApi)
-        : workflowApi.GetExampleWorkFlowList.bind(workflowApi),
   });
 
   const {
@@ -115,15 +109,9 @@ const WorkflowModalContent: FC<WorkFlowModalModeProps> = props => {
           targetTags = modalState.workflowTag;
         }
       }
-      let type: WorkFlowType;
-      if (modalState.workflowCategory === WorkflowCategory.Example) {
-        targetTags = Tag.All;
-        type = WorkFlowType.GuanFang;
-      } else {
-        type = modalState.isSpaceWorkflow
-          ? WorkFlowType.User
-          : WorkFlowType.GuanFang;
-      }
+      const type = modalState.isSpaceWorkflow
+        ? WorkFlowType.User
+        : WorkFlowType.GuanFang;
       let status: WorkflowModalState['status'] | undefined = undefined;
       if (modalState.isSpaceWorkflow) {
         status =
@@ -372,7 +360,7 @@ const WorkflowModalContent: FC<WorkFlowModalModeProps> = props => {
                     }
                     workflowNodes={
                       isTypeWorkflow(item)
-                        ? workflowNodesMap[item.workflow_id || ''] ?? []
+                        ? (workflowNodesMap[item.workflow_id || ''] ?? [])
                         : []
                     }
                     handleDeleteWorkflow={handleDelete}

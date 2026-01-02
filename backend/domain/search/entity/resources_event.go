@@ -16,11 +16,18 @@
 
 package entity
 
-// Reuse DomainName and OpType in AppDomainEvent
+// Stub types for backward compatibility
+// TODO: Remove these after cleaning up all references
 
+type OpType int
+
+const (
+	Created OpType = iota
+	Updated
+	Deleted
+)
+
+// ResourceDomainEvent - Stub type for backward compatibility
 type ResourceDomainEvent struct {
-	OpType   OpType            `json:"op_type"`
-	Resource *ResourceDocument `json:"resource_document,omitempty"`
-	Meta     *EventMeta        `json:"meta,omitempty"`
-	Extra    map[string]any    `json:"extra"`
+	// Empty stub - ES sync removed
 }

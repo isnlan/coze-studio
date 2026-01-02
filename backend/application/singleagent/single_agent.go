@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"time"
 
 	"github.com/bytedance/sonic"
 	"github.com/getkin/kin-openapi/openapi3"
@@ -28,7 +27,6 @@ import (
 	"github.com/coze-dev/coze-studio/backend/api/model/app/bot_common"
 	"github.com/coze-dev/coze-studio/backend/api/model/app/bot_open_api"
 	"github.com/coze-dev/coze-studio/backend/api/model/app/developer_api"
-	intelligence "github.com/coze-dev/coze-studio/backend/api/model/app/intelligence/common"
 	"github.com/coze-dev/coze-studio/backend/api/model/data/database/table"
 	"github.com/coze-dev/coze-studio/backend/api/model/playground"
 	"github.com/coze-dev/coze-studio/backend/application/base/ctxutil"
@@ -40,7 +38,6 @@ import (
 	"github.com/coze-dev/coze-studio/backend/domain/agent/singleagent/entity"
 	singleagent "github.com/coze-dev/coze-studio/backend/domain/agent/singleagent/service"
 	variableEntity "github.com/coze-dev/coze-studio/backend/domain/memory/variables/entity"
-	searchEntity "github.com/coze-dev/coze-studio/backend/domain/search/entity"
 	shortcutEntity "github.com/coze-dev/coze-studio/backend/domain/shortcutcmd/entity"
 	shortcutCmd "github.com/coze-dev/coze-studio/backend/domain/shortcutcmd/service"
 	"github.com/coze-dev/coze-studio/backend/pkg/errorx"
@@ -124,18 +121,6 @@ func (s *SingleAgentApplicationService) UpdateSingleAgentDraft(ctx context.Conte
 	}
 
 	err = s.DomainSVC.UpdateSingleAgentDraft(ctx, updateAgentInfo)
-	if err != nil {
-		return nil, err
-	}
-
-	err = s.appContext.EventBus.PublishProject(ctx, &searchEntity.ProjectDomainEvent{
-		OpType: searchEntity.Updated,
-		Project: &searchEntity.ProjectDocument{
-			ID:   agentID,
-			Name: &updateAgentInfo.Name,
-			Type: intelligence.IntelligenceType_Bot,
-		},
-	})
 	if err != nil {
 		return nil, err
 	}
@@ -391,17 +376,6 @@ func (s *SingleAgentApplicationService) DeleteAgentDraft(ctx context.Context, re
 		return nil, err
 	}
 
-	err = s.appContext.EventBus.PublishProject(ctx, &searchEntity.ProjectDomainEvent{
-		OpType: searchEntity.Deleted,
-		Project: &searchEntity.ProjectDocument{
-			ID:   req.GetBotID(),
-			Type: intelligence.IntelligenceType_Bot,
-		},
-	})
-	if err != nil {
-		logs.CtxWarnf(ctx, "publish delete project event failed id = %v , err = %v", req.GetBotID(), err)
-	}
-
 	return &developer_api.DeleteDraftBotResponse{
 		Data: &developer_api.DeleteDraftBotData{},
 		Code: 0,
@@ -653,20 +627,6 @@ func (s *SingleAgentApplicationService) ReportUserBehavior(ctx context.Context, 
 	err = checkUserSpace(ctx, uid, req.GetSpaceID())
 	if err != nil {
 		return nil, err
-	}
-
-	err = s.appContext.EventBus.PublishProject(ctx, &searchEntity.ProjectDomainEvent{
-		OpType: searchEntity.Updated,
-		Project: &searchEntity.ProjectDocument{
-			ID:             req.ResourceID,
-			SpaceID:        req.SpaceID,
-			Type:           intelligence.IntelligenceType_Bot,
-			IsRecentlyOpen: ptr.Of(1),
-			RecentlyOpenMS: ptr.Of(time.Now().UnixMilli()),
-		},
-	})
-	if err != nil {
-		logs.CtxWarnf(ctx, "publish updated project event failed id=%v, err=%v", req.ResourceID, err)
 	}
 
 	return &playground.ReportUserBehaviorResponse{}, nil

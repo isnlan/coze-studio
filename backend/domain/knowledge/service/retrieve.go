@@ -69,8 +69,6 @@ func (k *knowledgeSVC) Retrieve(ctx context.Context, request *RetrieveRequest) (
 	rewriteNode := compose.InvokableLambda(k.queryRewriteNode)
 	// vectorized recall
 	vectorRetrieveNode := compose.InvokableLambda(k.vectorRetrieveNode)
-	// ES recall
-	EsRetrieveNode := compose.InvokableLambda(k.esRetrieveNode)
 	// Nl2Sql recall
 	Nl2SqlRetrieveNode := compose.InvokableLambda(k.nl2SqlRetrieveNode)
 	// pass user query Node
@@ -81,7 +79,6 @@ func (k *knowledgeSVC) Retrieve(ctx context.Context, request *RetrieveRequest) (
 	packResult := compose.InvokableLambda(k.packResults)
 	parallelNode := compose.NewParallel().
 		AddLambda("vectorRetrieveNode", vectorRetrieveNode).
-		AddLambda("esRetrieveNode", EsRetrieveNode).
 		AddLambda("nl2SqlRetrieveNode", Nl2SqlRetrieveNode).
 		AddLambda("passRequestContext", passRequestContextNode)
 
@@ -214,30 +211,6 @@ func (k *knowledgeSVC) vectorRetrieveNode(ctx context.Context, req *RetrieveCont
 	}
 	if manager == nil {
 		logs.CtxErrorf(ctx, "err:%s", errorx.New(errno.ErrKnowledgeSearchStoreCode, errorx.KV("msg", "未实现vectorStore")).Error())
-		return nil, nil
-	}
-
-	retrieveResult, err = k.retrieveChannels(ctx, req, manager)
-	if err != nil {
-		logs.CtxErrorf(ctx, "retrieveChannels err:%s", err.Error())
-	}
-	return retrieveResult, nil
-}
-
-func (k *knowledgeSVC) esRetrieveNode(ctx context.Context, req *RetrieveContext) (retrieveResult []*schema.Document, err error) {
-	if req.Strategy.SearchType == knowledgeModel.SearchTypeSemantic {
-		return nil, nil
-	}
-	var manager searchstore.Manager
-	for i := range k.searchStoreManagers {
-		m := k.searchStoreManagers[i]
-		if m != nil && m.GetType() == searchstore.TypeTextStore {
-			manager = m
-			break
-		}
-	}
-	if manager == nil {
-		logs.CtxErrorf(ctx, "err:%s", errorx.New(errno.ErrKnowledgeSearchStoreCode, errorx.KV("msg", "未实现esStore")).Error())
 		return nil, nil
 	}
 
@@ -501,12 +474,6 @@ func (k *knowledgeSVC) reRankNode(ctx context.Context, resultMap map[string]any)
 		logs.CtxErrorf(ctx, "vector retrieve result is not found")
 		vectorRetrieveResult = []*schema.Document{}
 	}
-	// Get the interface of the es recall.
-	esRetrieveResult, ok := resultMap["esRetrieveNode"].([]*schema.Document)
-	if !ok {
-		logs.CtxErrorf(ctx, "es retrieve result is not found")
-		esRetrieveResult = []*schema.Document{}
-	}
 	// Get the interface recalled under nl2sql
 	nl2SqlRetrieveResult, ok := resultMap["nl2SqlRetrieveNode"].([]*schema.Document)
 	if !ok {
@@ -524,19 +491,16 @@ func (k *knowledgeSVC) reRankNode(ctx context.Context, resultMap map[string]any)
 	}
 
 	// Obtain recall results from different channels according to the recall strategy
+	// Note: ES full-text search has been removed, only vector search is supported
 	var retrieveResultArr [][]*rerank.Data
 	if retrieveCtx.Strategy.EnableNL2SQL {
 		// Nl2sql results
 		retrieveResultArr = append(retrieveResultArr, docs2RerankData(nl2SqlRetrieveResult))
 	}
 	switch retrieveCtx.Strategy.SearchType {
-	case knowledgeModel.SearchTypeSemantic:
+	case knowledgeModel.SearchTypeSemantic, knowledgeModel.SearchTypeFullText, knowledgeModel.SearchTypeHybrid:
+		// All search types now use vector search only (ES removed)
 		retrieveResultArr = append(retrieveResultArr, docs2RerankData(vectorRetrieveResult))
-	case knowledgeModel.SearchTypeFullText:
-		retrieveResultArr = append(retrieveResultArr, docs2RerankData(esRetrieveResult))
-	case knowledgeModel.SearchTypeHybrid:
-		retrieveResultArr = append(retrieveResultArr, docs2RerankData(vectorRetrieveResult))
-		retrieveResultArr = append(retrieveResultArr, docs2RerankData(esRetrieveResult))
 	default:
 		retrieveResultArr = append(retrieveResultArr, docs2RerankData(vectorRetrieveResult))
 	}

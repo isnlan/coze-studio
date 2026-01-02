@@ -22,14 +22,12 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
-	"time"
 
 	"github.com/bytedance/sonic"
 
 	dataset "github.com/coze-dev/coze-studio/backend/api/model/data/knowledge"
 	document "github.com/coze-dev/coze-studio/backend/api/model/data/knowledge"
 	modelCommon "github.com/coze-dev/coze-studio/backend/api/model/data/knowledge"
-	resource "github.com/coze-dev/coze-studio/backend/api/model/resource/common"
 	"github.com/coze-dev/coze-studio/backend/application/base/ctxutil"
 	"github.com/coze-dev/coze-studio/backend/application/search"
 
@@ -37,7 +35,6 @@ import (
 	"github.com/coze-dev/coze-studio/backend/domain/knowledge/entity"
 	"github.com/coze-dev/coze-studio/backend/domain/knowledge/service"
 	"github.com/coze-dev/coze-studio/backend/domain/permission"
-	resourceEntity "github.com/coze-dev/coze-studio/backend/domain/search/entity"
 	cd "github.com/coze-dev/coze-studio/backend/infra/document"
 	"github.com/coze-dev/coze-studio/backend/infra/document/parser"
 	"github.com/coze-dev/coze-studio/backend/infra/storage"
@@ -88,30 +85,6 @@ func (k *KnowledgeApplicationService) CreateKnowledge(ctx context.Context, req *
 	domainResp, err := k.DomainSVC.CreateKnowledge(ctx, &createReq)
 	if err != nil {
 		logs.CtxErrorf(ctx, "create knowledge failed, err: %v", err)
-		return dataset.NewCreateDatasetResponse(), err
-	}
-	var ptrAppID *int64
-	if req.ProjectID != 0 {
-		ptrAppID = ptr.Of(req.ProjectID)
-	}
-	err = k.eventBus.PublishResources(ctx, &resourceEntity.ResourceDomainEvent{
-		OpType: resourceEntity.Created,
-		Resource: &resourceEntity.ResourceDocument{
-			ResType:       resource.ResType_Knowledge,
-			ResID:         domainResp.KnowledgeID,
-			Name:          ptr.Of(req.Name),
-			ResSubType:    ptr.Of(int32(req.FormatType)),
-			SpaceID:       ptr.Of(req.SpaceID),
-			APPID:         ptrAppID,
-			OwnerID:       ptr.Of(*uid),
-			PublishStatus: ptr.Of(resource.PublishStatus_Published),
-			PublishTimeMS: ptr.Of(domainResp.CreatedAtMs),
-			CreateTimeMS:  ptr.Of(domainResp.CreatedAtMs),
-			UpdateTimeMS:  ptr.Of(domainResp.CreatedAtMs),
-		},
-	})
-	if err != nil {
-		logs.CtxErrorf(ctx, "publish resource event failed, err: %v", err)
 		return dataset.NewCreateDatasetResponse(), err
 	}
 	return &dataset.CreateDatasetResponse{
@@ -267,17 +240,6 @@ func (k *KnowledgeApplicationService) DeleteKnowledge(ctx context.Context, req *
 		logs.CtxErrorf(ctx, "delete knowledge failed, err: %v", err)
 		return dataset.NewDeleteDatasetResponse(), err
 	}
-	err = k.eventBus.PublishResources(ctx, &resourceEntity.ResourceDomainEvent{
-		OpType: resourceEntity.Deleted,
-		Resource: &resourceEntity.ResourceDocument{
-			ResID:   req.GetDatasetID(),
-			ResType: resource.ResType_Knowledge,
-		},
-	})
-	if err != nil {
-		logs.CtxErrorf(ctx, "publish resource event failed, err: %v", err)
-		return dataset.NewDeleteDatasetResponse(), err
-	}
 	return &dataset.DeleteDatasetResponse{}, nil
 }
 
@@ -293,7 +255,6 @@ func (k *KnowledgeApplicationService) UpdateKnowledge(ctx context.Context, req *
 		return nil, err
 	}
 
-	now := time.Now().UnixMilli()
 	updateReq := service.UpdateKnowledgeRequest{
 		KnowledgeID: req.GetDatasetID(),
 		IconUri:     &req.IconURI,
@@ -308,19 +269,6 @@ func (k *KnowledgeApplicationService) UpdateKnowledge(ctx context.Context, req *
 	err = k.DomainSVC.UpdateKnowledge(ctx, &updateReq)
 	if err != nil {
 		logs.CtxErrorf(ctx, "update knowledge failed, err: %v", err)
-		return dataset.NewUpdateDatasetResponse(), err
-	}
-	err = k.eventBus.PublishResources(ctx, &resourceEntity.ResourceDomainEvent{
-		OpType: resourceEntity.Updated,
-		Resource: &resourceEntity.ResourceDocument{
-			ResType:      resource.ResType_Knowledge,
-			ResID:        req.GetDatasetID(),
-			Name:         updateReq.Name,
-			UpdateTimeMS: ptr.Of(now),
-		},
-	})
-	if err != nil {
-		logs.CtxErrorf(ctx, "publish resource event failed, err: %v", err)
 		return dataset.NewUpdateDatasetResponse(), err
 	}
 	return &dataset.UpdateDatasetResponse{}, nil
@@ -1147,18 +1095,7 @@ func (k *KnowledgeApplicationService) DeleteAppKnowledge(ctx context.Context, re
 		return nil
 	}
 	for i := range listResp.KnowledgeList {
-		err := k.eventBus.PublishResources(ctx, &resourceEntity.ResourceDomainEvent{
-			OpType: resourceEntity.Deleted,
-			Resource: &resourceEntity.ResourceDocument{
-				ResID:   listResp.KnowledgeList[i].ID,
-				ResType: resource.ResType_Knowledge,
-			},
-		})
-		if err != nil {
-			logs.CtxErrorf(ctx, "publish resources failed, err: %v", err)
-			return err
-		}
-		err = k.DomainSVC.DeleteKnowledge(ctx, &model.DeleteKnowledgeRequest{
+		err := k.DomainSVC.DeleteKnowledge(ctx, &model.DeleteKnowledgeRequest{
 			KnowledgeID: listResp.KnowledgeList[i].ID,
 		})
 		if err != nil {
@@ -1172,36 +1109,6 @@ func (k *KnowledgeApplicationService) CopyKnowledge(ctx context.Context, req *mo
 	resp, err := k.DomainSVC.CopyKnowledge(ctx, req)
 	if err != nil {
 		return nil, err
-	}
-	getResp, err := k.DomainSVC.GetKnowledgeByID(ctx, &model.GetKnowledgeByIDRequest{
-		KnowledgeID: resp.TargetKnowledgeID,
-	})
-	if err != nil {
-		return nil, err
-	}
-	var appIDPtr *int64
-	if req.TargetAppID != 0 {
-		appIDPtr = &req.TargetAppID
-	}
-	if resp.CopyStatus == model.CopyStatus_Successful {
-		err = k.eventBus.PublishResources(ctx, &resourceEntity.ResourceDomainEvent{
-			OpType: resourceEntity.Created,
-			Resource: &resourceEntity.ResourceDocument{
-				ResID:         resp.TargetKnowledgeID,
-				ResType:       resource.ResType_Knowledge,
-				ResSubType:    ptr.Of(int32(getResp.Knowledge.Type)),
-				Name:          ptr.Of(getResp.Knowledge.Name),
-				OwnerID:       ptr.Of(getResp.Knowledge.CreatorID),
-				SpaceID:       ptr.Of(getResp.Knowledge.SpaceID),
-				APPID:         appIDPtr,
-				PublishStatus: ptr.Of(resource.PublishStatus_Published),
-				CreateTimeMS:  ptr.Of(getResp.Knowledge.CreatedAtMs),
-				UpdateTimeMS:  ptr.Of(getResp.Knowledge.CreatedAtMs),
-			},
-		})
-		if err != nil {
-			return nil, err
-		}
 	}
 	return resp, nil
 }
@@ -1244,19 +1151,6 @@ func (k *KnowledgeApplicationService) UpdatePhotoCaption(ctx context.Context, re
 func (k *KnowledgeApplicationService) MoveKnowledgeToLibrary(ctx context.Context, req *model.MoveKnowledgeToLibraryRequest) error {
 	err := k.DomainSVC.MoveKnowledgeToLibrary(ctx, req)
 	if err != nil {
-		return err
-	}
-	err = k.eventBus.PublishResources(ctx, &resourceEntity.ResourceDomainEvent{
-		OpType: resourceEntity.Updated,
-		Resource: &resourceEntity.ResourceDocument{
-			ResID:        req.KnowledgeID,
-			ResType:      resource.ResType_Knowledge,
-			APPID:        ptr.Of(int64(0)),
-			UpdateTimeMS: ptr.Of(time.Now().UnixMilli()),
-		},
-	})
-	if err != nil {
-		logs.CtxErrorf(ctx, "publish resources failed, err: %v", err)
 		return err
 	}
 	return nil

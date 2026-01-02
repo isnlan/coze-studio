@@ -34,8 +34,6 @@ import (
 	parser "github.com/coze-dev/coze-studio/backend/infra/document/parser/impl"
 	rerank "github.com/coze-dev/coze-studio/backend/infra/document/rerank/impl"
 	searchstore "github.com/coze-dev/coze-studio/backend/infra/document/searchstore/impl"
-	"github.com/coze-dev/coze-studio/backend/infra/es/impl/es"
-	eventbus "github.com/coze-dev/coze-studio/backend/infra/eventbus/impl"
 	"github.com/coze-dev/coze-studio/backend/infra/idgen/impl/idgen"
 	"github.com/coze-dev/coze-studio/backend/infra/imagex"
 	"github.com/coze-dev/coze-studio/backend/infra/imagex/impl/veimagex"
@@ -49,12 +47,8 @@ type AppDependencies struct {
 	DB                       *gorm.DB
 	CacheCli                 cache.Cmdable
 	IDGenSVC                 idgen.IDGenerator
-	ESClient                 es.Client
 	ImageXClient             imagex.ImageX
 	OSS                      storage.Storage
-	ResourceEventProducer    eventbus.Producer
-	AppEventProducer         eventbus.Producer
-	KnowledgeEventProducer   eventbus.Producer
 	CodeRunner               coderunner.Runner
 	ParserManager            parser.Manager
 	SearchStoreManagers      []searchstore.Manager
@@ -98,29 +92,9 @@ func Init(ctx context.Context) (*AppDependencies, error) {
 		return nil, fmt.Errorf("get basic config failed, err=%w", err)
 	}
 
-	deps.ESClient, err = es.New()
-	if err != nil {
-		return nil, fmt.Errorf("init es client failed, err=%w", err)
-	}
-
 	deps.ImageXClient, err = initImageX(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("init imagex client failed, err=%w", err)
-	}
-
-	deps.ResourceEventProducer, err = eventbus.InitResourceEventBusProducer()
-	if err != nil {
-		return nil, fmt.Errorf("init resource event bus producer failed, err=%w", err)
-	}
-
-	deps.AppEventProducer, err = eventbus.InitAppEventProducer()
-	if err != nil {
-		return nil, fmt.Errorf("init app event producer failed, err=%w", err)
-	}
-
-	deps.KnowledgeEventProducer, err = eventbus.InitKnowledgeEventBusProducer()
-	if err != nil {
-		return nil, fmt.Errorf("init knowledge event bus producer failed, err=%w", err)
 	}
 
 	deps.Reranker = rerank.New(knowledgeConfig)
@@ -154,7 +128,7 @@ func Init(ctx context.Context) (*AppDependencies, error) {
 		return nil, fmt.Errorf("init parser manager failed, err=%w", err)
 	}
 
-	deps.SearchStoreManagers, err = searchstore.New(ctx, knowledgeConfig, deps.ESClient)
+	deps.SearchStoreManagers, err = searchstore.New(ctx, knowledgeConfig)
 	if err != nil {
 		return nil, fmt.Errorf("init search store managers failed, err=%w", err)
 	}

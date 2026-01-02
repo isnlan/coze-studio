@@ -25,13 +25,11 @@ import (
 
 	"github.com/coze-dev/coze-studio/backend/api/model/admin/config"
 	"github.com/coze-dev/coze-studio/backend/infra/document/searchstore"
-	"github.com/coze-dev/coze-studio/backend/infra/document/searchstore/impl/elasticsearch"
 	"github.com/coze-dev/coze-studio/backend/infra/document/searchstore/impl/milvus"
 	searchstoreOceanbase "github.com/coze-dev/coze-studio/backend/infra/document/searchstore/impl/oceanbase"
 	"github.com/coze-dev/coze-studio/backend/infra/document/searchstore/impl/vikingdb"
 	"github.com/coze-dev/coze-studio/backend/infra/embedding"
 	"github.com/coze-dev/coze-studio/backend/infra/embedding/impl"
-	"github.com/coze-dev/coze-studio/backend/infra/es/impl/es"
 	"github.com/coze-dev/coze-studio/backend/infra/oceanbase"
 	"github.com/coze-dev/coze-studio/backend/pkg/envkey"
 	"github.com/coze-dev/coze-studio/backend/pkg/lang/ptr"
@@ -39,17 +37,14 @@ import (
 
 type Manager = searchstore.Manager
 
-func New(ctx context.Context, conf *config.KnowledgeConfig, es es.Client) ([]Manager, error) {
-	// es full text search
-	esSearchstoreManager := elasticsearch.NewManager(&elasticsearch.ManagerConfig{Client: es})
-
+func New(ctx context.Context, conf *config.KnowledgeConfig) ([]Manager, error) {
 	// vector search
 	mgr, err := getVectorStore(ctx, conf)
 	if err != nil {
 		return nil, fmt.Errorf("init vector store failed, err=%w", err)
 	}
 
-	return []searchstore.Manager{esSearchstoreManager, mgr}, nil
+	return []searchstore.Manager{mgr}, nil
 }
 
 func getVectorStore(ctx context.Context, conf *config.KnowledgeConfig) (searchstore.Manager, error) {

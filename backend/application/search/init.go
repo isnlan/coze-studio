@@ -18,8 +18,6 @@ package search
 
 import (
 	"context"
-	"fmt"
-	"os"
 
 	"gorm.io/gorm"
 
@@ -34,18 +32,13 @@ import (
 	user "github.com/coze-dev/coze-studio/backend/domain/user/service"
 	"github.com/coze-dev/coze-studio/backend/domain/workflow"
 	"github.com/coze-dev/coze-studio/backend/infra/cache"
-	"github.com/coze-dev/coze-studio/backend/infra/es"
-	"github.com/coze-dev/coze-studio/backend/infra/eventbus"
 	"github.com/coze-dev/coze-studio/backend/infra/storage"
-	"github.com/coze-dev/coze-studio/backend/pkg/logs"
-	"github.com/coze-dev/coze-studio/backend/types/consts"
 )
 
 type ServiceComponents struct {
 	DB                   *gorm.DB
 	Cache                cache.Cmdable
 	TOS                  storage.Storage
-	ESClient             es.Client
 	ProjectEventBus      ProjectEventBus
 	ResourceEventBus     ResourceEventBus
 	SingleAgentDomainSVC singleagent.SingleAgent
@@ -60,28 +53,13 @@ type ServiceComponents struct {
 }
 
 func InitService(ctx context.Context, s *ServiceComponents) (*SearchApplicationService, error) {
-	searchDomainSVC := search.NewDomainService(ctx, s.ESClient)
+	searchDomainSVC := search.NewDomainService(ctx, s.DB)
 
 	SearchSVC.DomainSVC = searchDomainSVC
 	SearchSVC.ServiceComponents = s
 
-	// setup consumer
-	searchConsumer := search.NewProjectHandler(ctx, s.ESClient)
-
-	logs.Infof("start search domain consumer...")
-	nameServer := os.Getenv(consts.MQServer)
-
-	err := eventbus.GetDefaultSVC().RegisterConsumer(nameServer, consts.RMQTopicApp, consts.RMQConsumeGroupApp, searchConsumer)
-	if err != nil {
-		return nil, fmt.Errorf("register search consumer failed, err=%w", err)
-	}
-
-	searchResourceConsumer := search.NewResourceHandler(ctx, s.ESClient)
-
-	err = eventbus.GetDefaultSVC().RegisterConsumer(nameServer, consts.RMQTopicResource, consts.RMQConsumeGroupResource, searchResourceConsumer)
-	if err != nil {
-		return nil, fmt.Errorf("register search consumer failed, err=%w", err)
-	}
+	// Event consumers removed - no longer syncing to Elasticsearch
+	// TODO: Remove event consumer registration and handler code
 
 	return SearchSVC, nil
 }
@@ -91,10 +69,10 @@ type (
 	ProjectEventBus  = search.ProjectEventBus
 )
 
-func NewResourceEventBus(p eventbus.Producer) search.ResourceEventBus {
-	return search.NewResourceEventBus(p)
+func NewResourceEventBus() search.ResourceEventBus {
+	return search.NewResourceEventBus()
 }
 
-func NewProjectEventBus(p eventbus.Producer) search.ProjectEventBus {
-	return search.NewProjectEventBus(p)
+func NewProjectEventBus() search.ProjectEventBus {
+	return search.NewProjectEventBus()
 }

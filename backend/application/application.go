@@ -74,8 +74,6 @@ import (
 	"github.com/coze-dev/coze-studio/backend/infra/checkpoint"
 	"github.com/coze-dev/coze-studio/backend/infra/document/progressbar"
 	progressBarImpl "github.com/coze-dev/coze-studio/backend/infra/document/progressbar/impl/progressbar"
-	"github.com/coze-dev/coze-studio/backend/infra/eventbus"
-	implEventbus "github.com/coze-dev/coze-studio/backend/infra/eventbus/impl"
 	"github.com/coze-dev/coze-studio/backend/infra/sqlparser"
 	sqlparserImpl "github.com/coze-dev/coze-studio/backend/infra/sqlparser/impl/sqlparser"
 	"github.com/coze-dev/coze-studio/backend/pkg/ctxcache"
@@ -172,9 +170,8 @@ func Init(ctx context.Context) (err error) {
 
 func initEventBus(infra *appinfra.AppDependencies) *eventbusImpl {
 	e := &eventbusImpl{}
-	eventbus.SetDefaultSVC(implEventbus.NewConsumerService())
-	e.resourceEventBus = search.NewResourceEventBus(infra.ResourceEventProducer)
-	e.projectEventBus = search.NewProjectEventBus(infra.AppEventProducer)
+	e.resourceEventBus = search.NewResourceEventBus()
+	e.projectEventBus = search.NewProjectEventBus()
 
 	return e
 }
@@ -288,7 +285,6 @@ func (b *basicServices) toKnowledgeServiceComponents(memoryService *memory.Memor
 		DB:                  b.infra.DB,
 		IDGen:               b.infra.IDGenSVC,
 		RDB:                 memoryService.RDBDomainSVC,
-		Producer:            b.infra.KnowledgeEventProducer,
 		SearchStoreManagers: b.infra.SearchStoreManagers,
 		ParseManager:        b.infra.ParserManager,
 		Storage:             b.infra.OSS,
@@ -355,7 +351,6 @@ func (p *primaryServices) toSearchServiceComponents(singleAgentSVC *singleagent.
 		DB:                   infra.DB,
 		Cache:                infra.CacheCli,
 		TOS:                  infra.OSS,
-		ESClient:             infra.ESClient,
 		ProjectEventBus:      p.basicServices.eventbus.projectEventBus,
 		SingleAgentDomainSVC: singleAgentSVC.DomainSVC,
 		APPDomainSVC:         appSVC.DomainSVC,

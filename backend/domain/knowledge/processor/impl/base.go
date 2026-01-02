@@ -20,18 +20,14 @@ import (
 	"context"
 	"time"
 
-	"github.com/bytedance/sonic"
-
 	knowledge "github.com/coze-dev/coze-studio/backend/crossdomain/knowledge/model"
 	"github.com/coze-dev/coze-studio/backend/domain/knowledge/entity"
 	"github.com/coze-dev/coze-studio/backend/domain/knowledge/internal/consts"
 	"github.com/coze-dev/coze-studio/backend/domain/knowledge/internal/convert"
 	"github.com/coze-dev/coze-studio/backend/domain/knowledge/internal/dal/model"
-	"github.com/coze-dev/coze-studio/backend/domain/knowledge/internal/events"
 	"github.com/coze-dev/coze-studio/backend/domain/knowledge/repository"
 	"github.com/coze-dev/coze-studio/backend/infra/document"
 	"github.com/coze-dev/coze-studio/backend/infra/document/parser"
-	"github.com/coze-dev/coze-studio/backend/infra/eventbus"
 	"github.com/coze-dev/coze-studio/backend/infra/idgen"
 	"github.com/coze-dev/coze-studio/backend/infra/rdb"
 	rdbEntity "github.com/coze-dev/coze-studio/backend/infra/rdb/entity"
@@ -53,14 +49,14 @@ type baseDocProcessor struct {
 	docModels   []*model.KnowledgeDocument
 	imageSlices []*model.KnowledgeDocumentSlice
 
-	storage       storage.Storage
-	knowledgeRepo repository.KnowledgeRepo
-	documentRepo  repository.KnowledgeDocumentRepo
-	sliceRepo     repository.KnowledgeDocumentSliceRepo
-	idgen         idgen.IDGenerator
-	rdb           rdb.RDB
-	producer      eventbus.Producer
-	parseManager  parser.Manager
+	storage        storage.Storage
+	knowledgeRepo  repository.KnowledgeRepo
+	documentRepo   repository.KnowledgeDocumentRepo
+	sliceRepo      repository.KnowledgeDocumentSliceRepo
+	idgen          idgen.IDGenerator
+	rdb            rdb.RDB
+	indexDocuments func(context.Context, []*entity.Document) error
+	parseManager   parser.Manager
 }
 
 func (p *baseDocProcessor) BeforeCreate() error {
@@ -251,17 +247,7 @@ func (p *baseDocProcessor) deleteTable() error {
 }
 
 func (p *baseDocProcessor) Indexing() error {
-	event := events.NewIndexDocumentsEvent(p.Documents[0].KnowledgeID, p.Documents)
-	body, err := sonic.Marshal(event)
-	if err != nil {
-		return errorx.New(errno.ErrKnowledgeParseJSONCode, errorx.KV("msg", err.Error()))
-	}
-
-	if err = p.producer.Send(p.ctx, body); err != nil {
-		logs.CtxErrorf(p.ctx, "send message failed, err: %v", err)
-		return errorx.New(errno.ErrKnowledgeMQSendFailCode, errorx.KV("msg", err.Error()))
-	}
-	return nil
+	return p.indexDocuments(p.ctx, p.Documents)
 }
 
 func (p *baseDocProcessor) GetResp() []*entity.Document {

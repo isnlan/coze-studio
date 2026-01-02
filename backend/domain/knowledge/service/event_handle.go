@@ -33,11 +33,9 @@ import (
 	"github.com/coze-dev/coze-studio/backend/domain/knowledge/internal/consts"
 	"github.com/coze-dev/coze-studio/backend/domain/knowledge/internal/convert"
 	"github.com/coze-dev/coze-studio/backend/domain/knowledge/internal/dal/model"
-	"github.com/coze-dev/coze-studio/backend/domain/knowledge/internal/events"
 	"github.com/coze-dev/coze-studio/backend/infra/document"
 	"github.com/coze-dev/coze-studio/backend/infra/document/progressbar"
 	"github.com/coze-dev/coze-studio/backend/infra/document/searchstore"
-	"github.com/coze-dev/coze-studio/backend/infra/eventbus"
 	"github.com/coze-dev/coze-studio/backend/infra/rdb"
 	rdbEntity "github.com/coze-dev/coze-studio/backend/infra/rdb/entity"
 	"github.com/coze-dev/coze-studio/backend/infra/storage"
@@ -48,64 +46,14 @@ import (
 	"github.com/coze-dev/coze-studio/backend/types/errno"
 )
 
-func (k *knowledgeSVC) HandleMessage(ctx context.Context, msg *eventbus.Message) (err error) {
-	defer func() {
-		if err != nil {
-			var statusError errorx.StatusError
-			if errors.As(err, &statusError) && statusError.Code() == errno.ErrKnowledgeNonRetryableCode {
-				logs.Errorf("[HandleMessage][no-retry] failed, %v", err)
-				err = nil
-			} else {
-				logs.Errorf("[HandleMessage][retry] failed, %v", err)
-			}
-		} else {
-			logs.Infof("[HandleMessage] knowledge event handle success, body=%s", string(msg.Body))
-		}
-	}()
-
-	event := &entity.Event{}
-	if err = sonic.Unmarshal(msg.Body, event); err != nil {
-		return errorx.New(errno.ErrKnowledgeParseJSONCode, errorx.KV("msg", fmt.Sprintf("unmarshal event failed, err: %v", err)))
-	}
-
-	switch event.Type {
-	case entity.EventTypeIndexDocuments:
-		if err = k.indexDocuments(ctx, event); err != nil {
-			return err
-		}
-	case entity.EventTypeIndexDocument:
-		if err = k.indexDocument(ctx, event); err != nil {
-			return err
-		}
-	case entity.EventTypeIndexSlice:
-		if err = k.indexSlice(ctx, event); err != nil {
-			return err
-		}
-	case entity.EventTypeDeleteKnowledgeData:
-		err = k.deleteKnowledgeDataEventHandler(ctx, event)
-		if err != nil {
-			logs.CtxErrorf(ctx, "[HandleMessage] delete knowledge failed, err: %v", err)
-			return err
-		}
-	case entity.EventTypeDocumentReview:
-		if err = k.documentReviewEventHandler(ctx, event); err != nil {
-			logs.CtxErrorf(ctx, "[HandleMessage] document review failed, err: %v", err)
-			return err
-		}
-	default:
-		return errorx.New(errno.ErrKnowledgeNonRetryableCode, errorx.KV("reason", fmt.Sprintf("unknown event type=%s", event.Type)))
-	}
-	return nil
-}
-
-func (k *knowledgeSVC) deleteKnowledgeDataEventHandler(ctx context.Context, event *entity.Event) error {
+func (k *knowledgeSVC) deleteKnowledgeDataEventHandler(ctx context.Context, knowledgeID int64, sliceIDs []int64) error {
 	// Delete the data in each store of the knowledge base
 	for _, manager := range k.searchStoreManagers {
-		s, err := manager.GetSearchStore(ctx, getCollectionName(event.KnowledgeID))
+		s, err := manager.GetSearchStore(ctx, getCollectionName(knowledgeID))
 		if err != nil {
 			return errorx.New(errno.ErrKnowledgeSearchStoreCode, errorx.KV("msg", fmt.Sprintf("get search store failed, err: %v", err)))
 		}
-		if err := s.Delete(ctx, slices.Transform(event.SliceIDs, func(id int64) string {
+		if err := s.Delete(ctx, slices.Transform(sliceIDs, func(id int64) string {
 			return strconv.FormatInt(id, 10)
 		})); err != nil {
 			logs.Errorf("delete knowledge failed, err: %v", err)
@@ -115,27 +63,27 @@ func (k *knowledgeSVC) deleteKnowledgeDataEventHandler(ctx context.Context, even
 	return nil
 }
 
-func (k *knowledgeSVC) indexDocuments(ctx context.Context, event *entity.Event) (err error) {
-	if len(event.Documents) == 0 {
+func (k *knowledgeSVC) indexDocuments(ctx context.Context, documents []*entity.Document) (err error) {
+	if len(documents) == 0 {
 		logs.CtxWarnf(ctx, "[indexDocuments] documents not provided")
 		return nil
 	}
-	for i := range event.Documents {
-		doc := event.Documents[i]
+	for _, doc := range documents {
 		if doc == nil {
 			logs.CtxWarnf(ctx, "[indexDocuments] document not provided")
 			continue
 		}
-		e := events.NewIndexDocumentEvent(doc.KnowledgeID, doc)
-		msgData, err := sonic.Marshal(e)
-		if err != nil {
-			logs.CtxErrorf(ctx, "[indexDocuments] marshal event failed, err: %v", err)
-			return errorx.New(errno.ErrKnowledgeParseJSONCode, errorx.KV("msg", fmt.Sprintf("marshal event failed, err: %v", err)))
-		}
-		err = k.producer.Send(ctx, msgData, eventbus.WithShardingKey(strconv.FormatInt(doc.KnowledgeID, 10)))
-		if err != nil {
-			logs.CtxErrorf(ctx, "[indexDocuments] send message failed, err: %v", err)
-			return errorx.New(errno.ErrKnowledgeMQSendFailCode, errorx.KV("msg", fmt.Sprintf("send message failed, err: %v", err)))
+		// Call indexDocument directly instead of sending to MQ
+		if err := k.indexDocument(ctx, doc); err != nil {
+			logs.CtxErrorf(ctx, "[indexDocuments] failed to index document %d: %v", doc.ID, err)
+			// Check if this is a non-retryable error
+			var statusError errorx.StatusError
+			if errors.As(err, &statusError) && statusError.Code() == errno.ErrKnowledgeNonRetryableCode {
+				// Non-retryable error: log and continue with next document
+				continue
+			}
+			// Retryable error: return immediately
+			return err
 		}
 	}
 	return nil
@@ -152,8 +100,7 @@ const (
 )
 
 // indexDocumentNew handles the indexing of a new document into the knowledge system
-func (k *knowledgeSVC) indexDocument(ctx context.Context, event *entity.Event) (err error) {
-	doc := event.Document
+func (k *knowledgeSVC) indexDocument(ctx context.Context, doc *entity.Document) (err error) {
 	if doc == nil {
 		return errorx.New(errno.ErrKnowledgeNonRetryableCode,
 			errorx.KV("reason", "[indexDocument] document not provided"))
@@ -166,7 +113,7 @@ func (k *knowledgeSVC) indexDocument(ctx context.Context, event *entity.Event) (
 	}
 
 	// Setup error handling and recovery
-	defer k.handleIndexingErrors(ctx, event, &err)
+	defer k.handleIndexingErrors(ctx, doc, &err)
 
 	// Start indexing process
 	if err = k.beginIndexingProcess(ctx, doc); err != nil {
@@ -198,7 +145,7 @@ func (k *knowledgeSVC) indexDocument(ctx context.Context, event *entity.Event) (
 	}
 
 	// Finalize document indexing
-	err = k.finalizeDocumentIndexing(ctx, event.Document.KnowledgeID, event.Document.ID)
+	err = k.finalizeDocumentIndexing(ctx, doc.KnowledgeID, doc.ID)
 	return
 }
 
@@ -217,12 +164,12 @@ func (k *knowledgeSVC) validateDocumentStatus(ctx context.Context, doc *entity.D
 }
 
 // handleIndexingErrors manages errors and recovery during indexing
-func (k *knowledgeSVC) handleIndexingErrors(ctx context.Context, event *entity.Event, err *error) {
+func (k *knowledgeSVC) handleIndexingErrors(ctx context.Context, doc *entity.Document, err *error) {
 	if e := recover(); e != nil {
 		err = ptr.Of(errorx.New(errno.ErrKnowledgeSystemCode,
 			errorx.KV("msg", fmt.Sprintf("panic: %v", e))))
 		logs.CtxErrorf(ctx, "[indexDocument] panic, err: %v", err)
-		k.setDocumentStatus(ctx, event.Document.ID,
+		k.setDocumentStatus(ctx, doc.ID,
 			int32(entity.DocumentStatusFailed), ptr.From(err).Error())
 		return
 	}
@@ -244,7 +191,7 @@ func (k *knowledgeSVC) handleIndexingErrors(ctx context.Context, event *entity.E
 			status = int32(entity.DocumentStatusChunking)
 		}
 
-		k.setDocumentStatus(ctx, event.Document.ID, status, errMsg)
+		k.setDocumentStatus(ctx, doc.ID, status, errMsg)
 	}
 }
 
@@ -769,29 +716,28 @@ func packInsertData(slices []*entity.Slice) (data []map[string]interface{}, err 
 	return data, nil
 }
 
-func (k *knowledgeSVC) indexSlice(ctx context.Context, event *entity.Event) (err error) {
-	slice := event.Slice
+func (k *knowledgeSVC) indexSlice(ctx context.Context, slice *entity.Slice, document *entity.Document) (err error) {
 	if slice == nil {
 		return errorx.New(errno.ErrKnowledgeSystemCode, errorx.KV("msg", "slice not provided"))
 	}
 	if slice.ID == 0 {
 		return errorx.New(errno.ErrKnowledgeSystemCode, errorx.KV("msg", "slice.id not set"))
 	}
-	if event.Document == nil {
+	if document == nil {
 		doc, err := k.documentRepo.GetByID(ctx, slice.DocumentID)
 		if err != nil {
 			return errorx.New(errno.ErrKnowledgeDBCode, errorx.KV("msg", fmt.Sprintf("get document failed, err: %v", err)))
 		}
-		event.Document, err = k.fromModelDocument(ctx, doc)
+		document, err = k.fromModelDocument(ctx, doc)
 		if err != nil {
 			return err
 		}
 	}
 	if slice.DocumentID == 0 {
-		slice.DocumentID = event.Document.ID
+		slice.DocumentID = document.ID
 	}
 	if slice.KnowledgeID == 0 {
-		slice.KnowledgeID = event.Document.KnowledgeID
+		slice.KnowledgeID = document.KnowledgeID
 	}
 	defer func() {
 		if err != nil {
@@ -801,7 +747,7 @@ func (k *knowledgeSVC) indexSlice(ctx context.Context, event *entity.Event) (err
 		}
 	}()
 
-	fields, err := k.mapSearchFields(event.Document)
+	fields, err := k.mapSearchFields(document)
 	if err != nil {
 		return err
 	}
@@ -814,14 +760,14 @@ func (k *knowledgeSVC) indexSlice(ctx context.Context, event *entity.Event) (err
 			return errorx.New(errno.ErrKnowledgeSearchStoreCode, errorx.KV("msg", fmt.Sprintf("get search store failed, err: %v", err)))
 		}
 
-		doc, err := k.slice2Document(ctx, event.Document, slice)
+		doc, err := k.slice2Document(ctx, document, slice)
 		if err != nil {
 			return err
 		}
 
 		if _, err = ss.Store(ctx, []*schema.Document{doc},
 			searchstore.WithIndexerPartitionKey(fieldNameDocumentID),
-			searchstore.WithPartition(strconv.FormatInt(event.Document.ID, 10)),
+			searchstore.WithPartition(strconv.FormatInt(document.ID, 10)),
 			searchstore.WithIndexingFields(indexingFields),
 		); err != nil {
 			return errorx.New(errno.ErrKnowledgeSearchStoreCode, errorx.KV("msg", fmt.Sprintf("store search store failed, err: %v", err)))
@@ -847,8 +793,7 @@ type chunkResult struct {
 	Chunks []*chunk `json:"chunks"`
 }
 
-func (k *knowledgeSVC) documentReviewEventHandler(ctx context.Context, event *entity.Event) (err error) {
-	review := event.DocumentReview
+func (k *knowledgeSVC) documentReviewEventHandler(ctx context.Context, document *entity.Document, review *entity.Review) (err error) {
 	if review == nil {
 		return errorx.New(errno.ErrKnowledgeInvalidParamCode, errorx.KV("msg", "review not provided"))
 	}
@@ -866,7 +811,7 @@ func (k *knowledgeSVC) documentReviewEventHandler(ctx context.Context, event *en
 	if err != nil {
 		return errorx.New(errno.ErrKnowledgeGetObjectFailCode, errorx.KV("msg", fmt.Sprintf("get object failed, err: %v", err)))
 	}
-	p, err := k.parseManager.GetParser(convert.DocumentToParseConfig(event.Document))
+	p, err := k.parseManager.GetParser(convert.DocumentToParseConfig(document))
 	if err != nil {
 		return errorx.New(errno.ErrKnowledgeGetParserFailCode, errorx.KV("msg", fmt.Sprintf("get parser failed, err: %v", err)))
 	}
@@ -878,13 +823,13 @@ func (k *knowledgeSVC) documentReviewEventHandler(ctx context.Context, event *en
 	if err != nil {
 		return errorx.New(errno.ErrKnowledgeIDGenCode, errorx.KV("msg", fmt.Sprintf("GenMultiIDs failed, err: %v", err)))
 	}
-	fn, ok := d2sMapping[event.Document.Type]
+	fn, ok := d2sMapping[document.Type]
 	if !ok {
 		return errorx.New(errno.ErrKnowledgeSystemCode, errorx.KV("msg", "convertFn is empty"))
 	}
 	var chunks []*chunk
 	for i, doc := range result {
-		slice, err := fn(doc, event.Document.KnowledgeID, event.Document.ID, event.Document.CreatorID)
+		slice, err := fn(doc, document.KnowledgeID, document.ID, document.CreatorID)
 		if err != nil {
 			return err
 		}

@@ -25,7 +25,6 @@ import (
 	"github.com/coze-dev/coze-studio/backend/domain/knowledge/processor"
 	"github.com/coze-dev/coze-studio/backend/domain/knowledge/repository"
 	"github.com/coze-dev/coze-studio/backend/infra/document/parser"
-	"github.com/coze-dev/coze-studio/backend/infra/eventbus"
 	"github.com/coze-dev/coze-studio/backend/infra/idgen"
 	"github.com/coze-dev/coze-studio/backend/infra/rdb"
 	"github.com/coze-dev/coze-studio/backend/infra/storage"
@@ -37,14 +36,14 @@ type DocProcessorConfig struct {
 	DocumentSource entity.DocumentSource
 	Documents      []*entity.Document
 
-	KnowledgeRepo repository.KnowledgeRepo
-	DocumentRepo  repository.KnowledgeDocumentRepo
-	SliceRepo     repository.KnowledgeDocumentSliceRepo
-	Idgen         idgen.IDGenerator
-	Storage       storage.Storage
-	Rdb           rdb.RDB
-	Producer      eventbus.Producer
-	ParseManager  parser.Manager
+	KnowledgeRepo  repository.KnowledgeRepo
+	DocumentRepo   repository.KnowledgeDocumentRepo
+	SliceRepo      repository.KnowledgeDocumentSliceRepo
+	Idgen          idgen.IDGenerator
+	Storage        storage.Storage
+	Rdb            rdb.RDB
+	IndexDocuments func(context.Context, []*entity.Document) error
+	ParseManager   parser.Manager
 }
 
 func NewDocProcessor(ctx context.Context, config *DocProcessorConfig) (p processor.DocProcessor) {
@@ -60,7 +59,7 @@ func NewDocProcessor(ctx context.Context, config *DocProcessorConfig) (p process
 		storage:        config.Storage,
 		idgen:          config.Idgen,
 		rdb:            config.Rdb,
-		producer:       config.Producer,
+		indexDocuments: config.IndexDocuments,
 		parseManager:   config.ParseManager,
 	}
 

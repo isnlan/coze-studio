@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/bytedance/sonic"
 	"github.com/getkin/kin-openapi/openapi3"
@@ -28,7 +27,6 @@ import (
 
 	pluginAPI "github.com/coze-dev/coze-studio/backend/api/model/plugin_develop"
 	common "github.com/coze-dev/coze-studio/backend/api/model/plugin_develop/common"
-	resCommon "github.com/coze-dev/coze-studio/backend/api/model/resource/common"
 	"github.com/coze-dev/coze-studio/backend/application/base/ctxutil"
 	"github.com/coze-dev/coze-studio/backend/crossdomain/plugin/consts"
 	"github.com/coze-dev/coze-studio/backend/crossdomain/plugin/convert"
@@ -36,7 +34,6 @@ import (
 	"github.com/coze-dev/coze-studio/backend/domain/plugin/dto"
 	"github.com/coze-dev/coze-studio/backend/domain/plugin/entity"
 	"github.com/coze-dev/coze-studio/backend/domain/plugin/repository"
-	searchEntity "github.com/coze-dev/coze-studio/backend/domain/search/entity"
 	"github.com/coze-dev/coze-studio/backend/pkg/errorx"
 	"github.com/coze-dev/coze-studio/backend/pkg/lang/ptr"
 	"github.com/coze-dev/coze-studio/backend/pkg/logs"
@@ -230,19 +227,6 @@ func (p *PluginApplicationService) UpdatePlugin(ctx context.Context, req *plugin
 		return nil, errorx.Wrapf(err, "UpdateDraftPluginWithCode failed, pluginID=%d", req.PluginID)
 	}
 
-	err = p.eventbus.PublishResources(ctx, &searchEntity.ResourceDomainEvent{
-		OpType: searchEntity.Updated,
-		Resource: &searchEntity.ResourceDocument{
-			ResType:      resCommon.ResType_Plugin,
-			ResID:        req.PluginID,
-			Name:         &manifest.NameForHuman,
-			UpdateTimeMS: ptr.Of(time.Now().UnixMilli()),
-		},
-	})
-	if err != nil {
-		logs.CtxErrorf(ctx, "publish resource '%d' failed, err=%v", req.PluginID, err)
-	}
-
 	resp = &pluginAPI.UpdatePluginResponse{
 		Data: &common.UpdatePluginData{
 			Res: true,
@@ -275,19 +259,6 @@ func (p *PluginApplicationService) UpdatePluginMeta(ctx context.Context, req *pl
 	err = p.DomainSVC.UpdateDraftPlugin(ctx, updateReq)
 	if err != nil {
 		return nil, errorx.Wrapf(err, "UpdateDraftPlugin failed, pluginID=%d", req.PluginID)
-	}
-
-	err = p.eventbus.PublishResources(ctx, &searchEntity.ResourceDomainEvent{
-		OpType: searchEntity.Updated,
-		Resource: &searchEntity.ResourceDocument{
-			ResType:      resCommon.ResType_Plugin,
-			ResID:        req.PluginID,
-			Name:         req.Name,
-			UpdateTimeMS: ptr.Of(time.Now().UnixMilli()),
-		},
-	})
-	if err != nil {
-		logs.CtxErrorf(ctx, "publish resource '%d' failed, err=%v", req.PluginID, err)
 	}
 
 	resp = &pluginAPI.UpdatePluginMetaResponse{}

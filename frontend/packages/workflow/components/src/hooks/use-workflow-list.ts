@@ -33,9 +33,6 @@ import {
 import {
   WorkflowMode,
   type GetWorkFlowListRequest,
-  type GetExampleWorkFlowListRequest,
-  type GetWorkFlowListResponse,
-  type GetExampleWorkFlowListResponse,
   WorkFlowType,
   DeleteType,
   workflowApi,
@@ -46,8 +43,8 @@ import {
   CheckType,
 } from '@coze-workflow/base/api';
 import { I18n } from '@coze-arch/i18n';
-import { CustomError } from '@coze-arch/bot-error';
 import { Toast } from '@coze-arch/coze-design';
+import { CustomError } from '@coze-arch/bot-error';
 
 import { reporter, wait } from '../utils';
 import { type WorkflowInfo, WorkflowModalFrom } from '../types';
@@ -109,15 +106,11 @@ export function useWorkflowList({
   pageSize = defaultPageSize,
   enabled = false,
   from,
-  fetchWorkflowListApi = workflowApi.GetWorkFlowList.bind(workflowApi),
 }: {
   pageSize?: number;
   /** Whether to enable data acquisition */
   enabled?: boolean;
   from?: WorkflowModalFrom;
-  fetchWorkflowListApi?: (
-    params: GetWorkFlowListRequest | GetExampleWorkFlowListRequest,
-  ) => Promise<GetWorkFlowListResponse | GetExampleWorkFlowListResponse>;
 } = {}): Readonly<WorkflowListReturn> {
   const [flowMode, setFlowMode] = useState<WorkflowMode>(WorkflowMode.All);
   const [flowType, setFlowType] = useState<WorkFlowType>(WorkFlowType.User);
@@ -239,7 +232,7 @@ export function useWorkflowList({
           ? params
           : omit(params, ['bind_biz_id']);
 
-        const resp = await fetchWorkflowListApi(fetchParams);
+        const resp = await workflowApi.GetWorkFlowList(fetchParams);
         result.total = (resp.data.total as number) ?? 0;
         // Set process permissions
         result.workflow_list = (resp.data.workflow_list ?? []).map(

@@ -245,9 +245,7 @@ func CreateModel(ctx context.Context, c *app.RequestContext) {
 	}
 
 	respMsgs, err := chatModel.Generate(ctx, []*schema.Message{
-		schema.SystemMessage("Just answer with a number, no explanation."),
-		schema.UserMessage("1+1=?"),
-	})
+		schema.SystemMessage("1+1=?,Just answer with a number, no explanation.")})
 	if err != nil {
 		invalidParamRequestResponse(c, fmt.Sprintf("generate model failed: %v", err))
 		return

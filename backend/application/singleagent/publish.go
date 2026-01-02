@@ -21,15 +21,12 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
-	"time"
 
 	"github.com/coze-dev/coze-studio/backend/api/model/app/developer_api"
-	"github.com/coze-dev/coze-studio/backend/api/model/app/intelligence/common"
 	"github.com/coze-dev/coze-studio/backend/api/model/playground"
 	"github.com/coze-dev/coze-studio/backend/application/base/ctxutil"
 	database "github.com/coze-dev/coze-studio/backend/crossdomain/database/model"
 	"github.com/coze-dev/coze-studio/backend/domain/agent/singleagent/entity"
-	search "github.com/coze-dev/coze-studio/backend/domain/search/entity"
 	"github.com/coze-dev/coze-studio/backend/pkg/errorx"
 	"github.com/coze-dev/coze-studio/backend/pkg/lang/conv"
 	"github.com/coze-dev/coze-studio/backend/pkg/lang/ptr"
@@ -120,19 +117,6 @@ func (s *SingleAgentApplicationService) PublishAgent(ctx context.Context, req *d
 	}
 
 	_ = tasks.Wait()
-
-	err = s.appContext.EventBus.PublishProject(ctx, &search.ProjectDomainEvent{
-		OpType: search.Updated,
-		Project: &search.ProjectDocument{
-			ID:            draftAgent.AgentID,
-			HasPublished:  ptr.Of(1),
-			PublishTimeMS: ptr.Of(time.Now().UnixMilli()),
-			Type:          common.IntelligenceType_Bot,
-		},
-	})
-	if err != nil {
-		logs.CtxWarnf(ctx, "publish project event failed, agentID: %d, err : %v", draftAgent.AgentID, err)
-	}
 
 	return &developer_api.PublishDraftBotResponse{
 		Data: &developer_api.PublishDraftBotData{

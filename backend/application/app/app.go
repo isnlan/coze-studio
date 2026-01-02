@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -55,7 +54,6 @@ import (
 	variables "github.com/coze-dev/coze-studio/backend/domain/memory/variables/service"
 	"github.com/coze-dev/coze-studio/backend/domain/permission"
 	"github.com/coze-dev/coze-studio/backend/domain/plugin/dto"
-	searchEntity "github.com/coze-dev/coze-studio/backend/domain/search/entity"
 	search "github.com/coze-dev/coze-studio/backend/domain/search/service"
 	user "github.com/coze-dev/coze-studio/backend/domain/user/service"
 	"github.com/coze-dev/coze-studio/backend/infra/storage"
@@ -111,21 +109,6 @@ func (a *APPApplicationService) DraftProjectCreate(ctx context.Context, req *pro
 		return nil, errorx.Wrapf(err, "CreateDraftAPP failed, spaceID=%d", req.SpaceID)
 	}
 
-	err = a.projectEventBus.PublishProject(ctx, &searchEntity.ProjectDomainEvent{
-		OpType: searchEntity.Created,
-		Project: &searchEntity.ProjectDocument{
-			Status:  common.IntelligenceStatus_Using,
-			Type:    common.IntelligenceType_Project,
-			ID:      appID,
-			SpaceID: &req.SpaceID,
-			OwnerID: userID,
-			Name:    &req.Name,
-		},
-	})
-	if err != nil {
-		return nil, errorx.Wrapf(err, "publish project '%d' failed", appID)
-	}
-
 	resp = &projectAPI.DraftProjectCreateResponse{
 		Data: &projectAPI.DraftProjectCreateData{
 			ProjectID: appID,
@@ -174,17 +157,6 @@ func (a *APPApplicationService) DraftProjectDelete(ctx context.Context, req *pro
 	err = a.DomainSVC.DeleteDraftAPP(ctx, req.ProjectID)
 	if err != nil {
 		return nil, errorx.Wrapf(err, "DeleteDraftAPP failed, id=%d", req.ProjectID)
-	}
-
-	err = a.projectEventBus.PublishProject(ctx, &searchEntity.ProjectDomainEvent{
-		OpType: searchEntity.Deleted,
-		Project: &searchEntity.ProjectDocument{
-			ID:   req.ProjectID,
-			Type: common.IntelligenceType_Project,
-		},
-	})
-	if err != nil {
-		logs.CtxErrorf(ctx, "publish project '%d' failed, err=%v", req.ProjectID, err)
 	}
 
 	safego.Go(ctx, func() {
@@ -239,18 +211,6 @@ func (a *APPApplicationService) DraftProjectUpdate(ctx context.Context, req *pro
 	})
 	if err != nil {
 		return nil, errorx.Wrapf(err, "UpdateDraftAPP failed, id=%d", req.ProjectID)
-	}
-
-	err = a.projectEventBus.PublishProject(ctx, &searchEntity.ProjectDomainEvent{
-		OpType: searchEntity.Updated,
-		Project: &searchEntity.ProjectDocument{
-			ID:   req.ProjectID,
-			Type: common.IntelligenceType_Project,
-			Name: req.Name,
-		},
-	})
-	if err != nil {
-		return nil, errorx.Wrapf(err, "publish project '%d' failed", req.ProjectID)
 	}
 
 	resp = &projectAPI.DraftProjectUpdateResponse{}
@@ -422,20 +382,6 @@ func (a *APPApplicationService) ReportUserBehavior(ctx context.Context, req *pla
 		return nil, err
 	}
 
-	err = a.projectEventBus.PublishProject(ctx, &searchEntity.ProjectDomainEvent{
-		OpType: searchEntity.Updated,
-		Project: &searchEntity.ProjectDocument{
-			ID:             req.ResourceID,
-			SpaceID:        req.SpaceID,
-			Type:           common.IntelligenceType_Project,
-			IsRecentlyOpen: ptr.Of(1),
-			RecentlyOpenMS: ptr.Of(time.Now().UnixMilli()),
-		},
-	})
-	if err != nil {
-		logs.CtxWarnf(ctx, "publish project '%d' event failed err=%s", req.ResourceID, err)
-	}
-
 	return &playground.ReportUserBehaviorResponse{}, nil
 }
 
@@ -492,19 +438,6 @@ func (a *APPApplicationService) PublishAPP(ctx context.Context, req *publishAPI.
 
 	if !res.Success {
 		return resp, nil
-	}
-
-	err = a.projectEventBus.PublishProject(ctx, &searchEntity.ProjectDomainEvent{
-		OpType: searchEntity.Updated,
-		Project: &searchEntity.ProjectDocument{
-			ID:            req.ProjectID,
-			Type:          common.IntelligenceType_Project,
-			HasPublished:  ptr.Of(1),
-			PublishTimeMS: ptr.Of(time.Now().UnixMilli()),
-		},
-	})
-	if err != nil {
-		logs.CtxErrorf(ctx, "publish project '%d' failed,  err=%v", req.ProjectID, err)
 	}
 
 	return resp, nil
@@ -1103,21 +1036,6 @@ func (a *APPApplicationService) DraftProjectCopy(ctx context.Context, req *proje
 	}
 
 	newAPPID, err := a.duplicateDraftAPP(ctx, *userID, req)
-	if err != nil {
-		return nil, err
-	}
-
-	err = a.projectEventBus.PublishProject(ctx, &searchEntity.ProjectDomainEvent{
-		OpType: searchEntity.Created,
-		Project: &searchEntity.ProjectDocument{
-			Status:  common.IntelligenceStatus_Using,
-			Type:    common.IntelligenceType_Project,
-			ID:      newAPPID,
-			SpaceID: &req.ToSpaceID,
-			OwnerID: userID,
-			Name:    &req.Name,
-		},
-	})
 	if err != nil {
 		return nil, err
 	}

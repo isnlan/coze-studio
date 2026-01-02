@@ -60,7 +60,6 @@ export {
   WorkflowResetLayoutService,
   WorkflowDocumentProvider,
   POINT_RADIUS,
-  usePlaygroundContainer,
   WorkflowLineRenderData,
   usePlaygroundReadonlyState,
   type WorkflowEdgeJSON,

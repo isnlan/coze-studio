@@ -276,55 +276,6 @@ services:
       timeout: 10s
     networks:
       - coze-network
-  nsqlookupd:
-    image: nsqio/nsq:v1.2.1
-    container_name: coze-nsqlookupd
-    command: /nsqlookupd
-    restart: always
-    # ports:
-    #   - '4160'
-    #   - '4161'
-    networks:
-      - coze-network
-    healthcheck:
-      test: ['CMD-SHELL', 'nsqlookupd --version']
-      interval: 5s
-      timeout: 10s
-      retries: 10
-      start_period: 10s
-
-  nsqd:
-    image: nsqio/nsq:v1.2.1
-    container_name: coze-nsqd
-    command: /nsqd --lookupd-tcp-address=nsqlookupd:4160 --broadcast-address=nsqd
-    restart: always
-    # ports:
-    #   - '4150'
-    #   - '4151'
-    depends_on:
-      nsqlookupd:
-        condition: service_healthy
-    networks:
-      - coze-network
-    healthcheck:
-      test: ['CMD-SHELL', '/nsqd --version']
-      interval: 5s
-      timeout: 10s
-      retries: 10
-      start_period: 10s
-
-  nsqadmin:
-    image: nsqio/nsq:v1.2.1
-    container_name: coze-nsqadmin
-    command: /nsqadmin --lookupd-http-address=nsqlookupd:4161
-    restart: always
-    # ports:
-    #   - '4171'
-    depends_on:
-      nsqlookupd:
-        condition: service_healthy
-    networks:
-      - coze-network
 
   coze-server:
     # build:

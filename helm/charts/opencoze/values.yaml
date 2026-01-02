@@ -62,8 +62,8 @@ oceanbase:
 redis:
   enabled: true
   image:
-    repository: bitnamilegacy/redis
-    tag: "8.0"
+    repository: bitnami/redis
+    tag: "7.2"
   aofEnabled: "no"
   port: 6379
   ioThreads: 4
@@ -80,10 +80,10 @@ cozeServer:
   replicaCount: 1
 
   image:
-    repository: cozedev/coze-studio-server
+    repository: opencoze/opencoze
     # -- Keep the mirror up to date
     pullPolicy: Always
-    tag: 'latest'
+    tag: '0.3.9'
 
   service:
     type: LoadBalancer
@@ -199,7 +199,7 @@ rocketmq:
 elasticsearch:
   enabled: true
   image:
-    repository: bitnamilegacy/elasticsearch
+    repository: bitnami/elasticsearch
     tag: 8.18.0
   javaOpts: "-Djdk.tls.client.protocols=TLSv1.2 -Dhttps.protocols=TLSv1.2 -Djavax.net.ssl.trustAll=true -Xms4096m -Xmx4096m"
   username: ""
@@ -257,17 +257,6 @@ milvus:
     storageClassName: ""
     size: "20Gi"
 
-# -- coze-web configuration (nginx frontend)
-cozeWeb:
-  enabled: true
-  replicaCount: 1
-  image:
-    repository: cozedev/coze-studio-web
-    pullPolicy: Always
-    tag: 'latest'
-  service:
-    type: LoadBalancer
-    port: 80
 
 images:
   busybox: busybox:latest

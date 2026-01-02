@@ -48,12 +48,12 @@ type SearchApplicationService struct {
 var resType2iconURI = map[common.ResType]string{
 	common.ResType_Plugin:    consts.DefaultPluginIcon,
 	common.ResType_Workflow:  consts.DefaultWorkflowIcon,
+	common.ResType_Imageflow: consts.DefaultWorkflowIcon,
 	common.ResType_Knowledge: consts.DefaultDatasetIcon,
 	common.ResType_Prompt:    consts.DefaultPromptIcon,
 	common.ResType_Database:  consts.DefaultDatabaseIcon,
 	// ResType_UI:        consts.DefaultWorkflowIcon,
 	// ResType_Voice:     consts.DefaultPluginIcon,
-	// ResType_Imageflow: consts.DefaultPluginIcon,
 }
 
 func (s *SearchApplicationService) LibraryResourceList(ctx context.Context, req *resource.LibraryResourceListRequest) (resp *resource.LibraryResourceListResponse, err error) {
@@ -124,8 +124,9 @@ func (s *SearchApplicationService) LibraryResourceList(ctx context.Context, req 
 		if res == nil {
 			continue
 		}
+		// Skip resources not created by the current user
 		if res.CreatorID != nil && *res.CreatorID != *userID {
-			return nil, errorx.New(errno.ErrSearchPermissionCode, errorx.KV("msg", "user can't search resources created by themselves"))
+			continue
 		}
 		filterResource = append(filterResource, res)
 	}
@@ -319,7 +320,7 @@ func (s *SearchApplicationService) packAPPResources(ctx context.Context, resourc
 			defer lock.Unlock()
 
 			switch v.ResType {
-			case common.ResType_Workflow:
+			case common.ResType_Workflow, common.ResType_Imageflow:
 				workflowGroup.ResourceList = append(workflowGroup.ResourceList, ri)
 			case common.ResType_Plugin:
 				pluginGroup.ResourceList = append(pluginGroup.ResourceList, ri)

@@ -18,19 +18,15 @@ package plugin
 
 import (
 	"context"
-	"time"
 
 	pluginAPI "github.com/coze-dev/coze-studio/backend/api/model/plugin_develop"
 	common "github.com/coze-dev/coze-studio/backend/api/model/plugin_develop/common"
-	resCommon "github.com/coze-dev/coze-studio/backend/api/model/resource/common"
 	"github.com/coze-dev/coze-studio/backend/application/base/ctxutil"
 	"github.com/coze-dev/coze-studio/backend/crossdomain/plugin/model"
 	"github.com/coze-dev/coze-studio/backend/domain/plugin/dto"
 	"github.com/coze-dev/coze-studio/backend/domain/plugin/entity"
-	searchEntity "github.com/coze-dev/coze-studio/backend/domain/search/entity"
 	"github.com/coze-dev/coze-studio/backend/pkg/errorx"
 	"github.com/coze-dev/coze-studio/backend/pkg/lang/ptr"
-	"github.com/coze-dev/coze-studio/backend/pkg/logs"
 	"github.com/coze-dev/coze-studio/backend/types/errno"
 )
 
@@ -49,19 +45,6 @@ func (p *PluginApplicationService) PublishPlugin(ctx context.Context, req *plugi
 		return nil, errorx.Wrapf(err, "PublishPlugin failed, pluginID=%d", req.PluginID)
 	}
 
-	err = p.eventbus.PublishResources(ctx, &searchEntity.ResourceDomainEvent{
-		OpType: searchEntity.Updated,
-		Resource: &searchEntity.ResourceDocument{
-			ResType:       resCommon.ResType_Plugin,
-			ResID:         req.PluginID,
-			PublishStatus: ptr.Of(resCommon.PublishStatus_Published),
-			PublishTimeMS: ptr.Of(time.Now().UnixMilli()),
-		},
-	})
-	if err != nil {
-		logs.CtxErrorf(ctx, "publish resource '%d' failed, err=%v", req.PluginID, err)
-	}
-
 	resp = &pluginAPI.PublishPluginResponse{}
 
 	return resp, nil
@@ -76,18 +59,6 @@ func (p *PluginApplicationService) DelPlugin(ctx context.Context, req *pluginAPI
 	err = p.DomainSVC.DeleteDraftPlugin(ctx, req.PluginID)
 	if err != nil {
 		return nil, errorx.Wrapf(err, "DeleteDraftPlugin failed, pluginID=%d", req.PluginID)
-	}
-
-	err = p.eventbus.PublishResources(ctx, &searchEntity.ResourceDomainEvent{
-		OpType: searchEntity.Deleted,
-		Resource: &searchEntity.ResourceDocument{
-			ResType:      resCommon.ResType_Plugin,
-			ResID:        req.PluginID,
-			UpdateTimeMS: ptr.Of(time.Now().UnixMilli()),
-		},
-	})
-	if err != nil {
-		return nil, errorx.Wrapf(err, "publish resource '%d' failed", req.PluginID)
 	}
 
 	resp = &pluginAPI.DelPluginResponse{}
@@ -168,22 +139,9 @@ func (p *PluginApplicationService) GetDevPluginList(ctx context.Context, req *pl
 }
 
 func (p *PluginApplicationService) DeleteAPPAllPlugins(ctx context.Context, appID int64) (err error) {
-	pluginIDs, err := p.DomainSVC.DeleteAPPAllPlugins(ctx, appID)
+	_, err = p.DomainSVC.DeleteAPPAllPlugins(ctx, appID)
 	if err != nil {
 		return errorx.Wrapf(err, "DeleteAPPAllPlugins failed, appID=%d", appID)
-	}
-
-	for _, id := range pluginIDs {
-		err = p.eventbus.PublishResources(ctx, &searchEntity.ResourceDomainEvent{
-			OpType: searchEntity.Deleted,
-			Resource: &searchEntity.ResourceDocument{
-				ResType: resCommon.ResType_Plugin,
-				ResID:   id,
-			},
-		})
-		if err != nil {
-			return errorx.Wrapf(err, "publish resource '%d' failed", id)
-		}
 	}
 
 	return nil
@@ -200,33 +158,6 @@ func (p *PluginApplicationService) CopyPlugin(ctx context.Context, req *dto.Copy
 		return nil, errorx.Wrapf(err, "CopyPlugin failed, pluginID=%d", req.PluginID)
 	}
 
-	plugin := res.Plugin
-
-	now := time.Now().UnixMilli()
-	resDoc := &searchEntity.ResourceDocument{
-		ResType:       resCommon.ResType_Plugin,
-		ResSubType:    ptr.Of(int32(plugin.PluginType)),
-		ResID:         plugin.ID,
-		Name:          ptr.Of(plugin.GetName()),
-		SpaceID:       &plugin.SpaceID,
-		APPID:         plugin.APPID,
-		OwnerID:       &req.UserID,
-		PublishStatus: ptr.Of(resCommon.PublishStatus_UnPublished),
-		CreateTimeMS:  ptr.Of(now),
-	}
-	if plugin.Published() {
-		resDoc.PublishStatus = ptr.Of(resCommon.PublishStatus_Published)
-		resDoc.PublishTimeMS = ptr.Of(now)
-	}
-
-	err = p.eventbus.PublishResources(ctx, &searchEntity.ResourceDomainEvent{
-		OpType:   searchEntity.Created,
-		Resource: resDoc,
-	})
-	if err != nil {
-		return nil, errorx.Wrapf(err, "publish resource '%d' failed", plugin.ID)
-	}
-
 	resp = &dto.CopyPluginResponse{
 		Plugin: res.Plugin,
 		Tools:  res.Tools,
@@ -239,23 +170,6 @@ func (p *PluginApplicationService) MoveAPPPluginToLibrary(ctx context.Context, p
 	plugin, err = p.DomainSVC.MoveAPPPluginToLibrary(ctx, pluginID)
 	if err != nil {
 		return nil, errorx.Wrapf(err, "MoveAPPPluginToLibrary failed, pluginID=%d", pluginID)
-	}
-
-	now := time.Now().UnixMilli()
-
-	err = p.eventbus.PublishResources(ctx, &searchEntity.ResourceDomainEvent{
-		OpType: searchEntity.Updated,
-		Resource: &searchEntity.ResourceDocument{
-			ResType:       resCommon.ResType_Plugin,
-			ResID:         pluginID,
-			APPID:         ptr.Of(int64(0)),
-			PublishStatus: ptr.Of(resCommon.PublishStatus_Published),
-			PublishTimeMS: ptr.Of(now),
-			UpdateTimeMS:  ptr.Of(now),
-		},
-	})
-	if err != nil {
-		return nil, errorx.Wrapf(err, "publish resource '%d' failed", pluginID)
 	}
 
 	return plugin, nil

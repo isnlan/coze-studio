@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/coze-dev/coze-studio/backend/api/model/app/intelligence"
 	"github.com/coze-dev/coze-studio/backend/api/model/app/intelligence/common"
@@ -33,7 +32,6 @@ import (
 	"github.com/coze-dev/coze-studio/backend/pkg/errorx"
 	"github.com/coze-dev/coze-studio/backend/pkg/lang/conv"
 	"github.com/coze-dev/coze-studio/backend/pkg/lang/ptr"
-	"github.com/coze-dev/coze-studio/backend/pkg/lang/ternary"
 	"github.com/coze-dev/coze-studio/backend/pkg/logs"
 	"github.com/coze-dev/coze-studio/backend/pkg/taskgroup"
 	"github.com/coze-dev/coze-studio/backend/types/consts"
@@ -147,25 +145,6 @@ func (s *SearchApplicationService) PublicFavoriteProduct(ctx context.Context, re
 }
 
 func (s *SearchApplicationService) favoriteProject(ctx context.Context, projectID int64, typ product_common.ProductEntityType, isFav bool) error {
-	var entityType common.IntelligenceType
-	if typ == product_common.ProductEntityType_Bot {
-		entityType = common.IntelligenceType_Bot
-	} else {
-		entityType = common.IntelligenceType_Project
-	}
-	err := s.ProjectEventBus.PublishProject(ctx, &searchEntity.ProjectDomainEvent{
-		OpType: searchEntity.Updated,
-		Project: &searchEntity.ProjectDocument{
-			ID:        projectID,
-			IsFav:     ptr.Of(ternary.IFElse(isFav, 1, 0)),
-			FavTimeMS: ptr.Of(time.Now().UnixMilli()),
-			Type:      entityType,
-		},
-	})
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 

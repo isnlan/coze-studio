@@ -54,25 +54,6 @@ const (
 	HostKeyInCtx          = "HOST_KEY_IN_CTX"
 	RequestSchemeKeyInCtx = "REQUEST_SCHEME_IN_CTX"
 
-	MQTypeKey                = "COZE_MQ_TYPE"
-	MQServer                 = "MQ_NAME_SERVER"
-	RMQSecretKey             = "RMQ_SECRET_KEY"
-	RMQAccessKey             = "RMQ_ACCESS_KEY"
-	PulsarServiceURL         = "PULSAR_SERVICE_URL"
-	PulsarJWTToken           = "PULSAR_JWT_TOKEN"
-	NATSJWTToken             = "NATS_JWT_TOKEN"
-	NATSNKeySeed             = "NATS_NKEY_SEED"
-	NATSUsername             = "NATS_USERNAME"
-	NATSPassword             = "NATS_PASSWORD"
-	NATSToken                = "NATS_TOKEN"
-	NATSUseJetStream         = "NATS_USE_JETSTREAM"
-	RMQTopicApp              = "opencoze_search_app"
-	RMQTopicResource         = "opencoze_search_resource"
-	RMQTopicKnowledge        = "opencoze_knowledge"
-	RMQConsumeGroupResource  = "cg_search_resource"
-	RMQConsumeGroupApp       = "cg_search_app"
-	RMQConsumeGroupKnowledge = "cg_knowledge"
-
 	CozeConnectorID   = int64(10000010)
 	WebSDKConnectorID = int64(999)
 	APIConnectorID    = int64(1024)

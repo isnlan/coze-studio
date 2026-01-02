@@ -372,56 +372,6 @@ services:
     networks:
       - coze-network
 
-  nsqlookupd:
-    image: nsqio/nsq:v1.2.1
-    container_name: coze-nsqlookupd
-    command: /nsqlookupd
-    profiles: ['middleware']
-    ports:
-      - '4160:4160'
-      - '4161:4161'
-    networks:
-      - coze-network
-    healthcheck:
-      test: ['CMD-SHELL', 'nsqlookupd --version']
-      interval: 5s
-      timeout: 10s
-      retries: 10
-      start_period: 10s
-
-  nsqd:
-    image: nsqio/nsq:v1.2.1
-    container_name: coze-nsqd
-    command: /nsqd --lookupd-tcp-address=coze-nsqlookupd:4160 --broadcast-address=coze-nsqd
-    profiles: ['middleware']
-    ports:
-      - '4150:4150'
-      - '4151:4151'
-    depends_on:
-      nsqlookupd:
-        condition: service_healthy
-    networks:
-      - coze-network
-    healthcheck:
-      test: ['CMD-SHELL', '/nsqd --version']
-      interval: 5s
-      timeout: 10s
-      retries: 10
-      start_period: 10s
-
-  nsqadmin:
-    image: nsqio/nsq:v1.2.1
-    container_name: coze-nsqadmin
-    command: /nsqadmin --lookupd-http-address=coze-nsqlookupd:4161
-    profiles: ['middleware']
-    ports:
-      - '4171:4171'
-    depends_on:
-      nsqlookupd:
-        condition: service_healthy
-    networks:
-      - coze-network
-
   minio-setup:
     image: minio/mc:RELEASE.2025-05-21T01-59-54Z-cpuv1
     container_name: coze-minio-setup

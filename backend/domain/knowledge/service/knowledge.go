@@ -31,7 +31,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/bytedance/sonic"
 	"gorm.io/gorm"
 
 	"github.com/coze-dev/coze-studio/backend/api/model/app/developer_api"
@@ -41,7 +40,6 @@ import (
 	"github.com/coze-dev/coze-studio/backend/domain/knowledge/internal/consts"
 	"github.com/coze-dev/coze-studio/backend/domain/knowledge/internal/convert"
 	"github.com/coze-dev/coze-studio/backend/domain/knowledge/internal/dal/model"
-	"github.com/coze-dev/coze-studio/backend/domain/knowledge/internal/events"
 	"github.com/coze-dev/coze-studio/backend/domain/knowledge/processor/impl"
 	"github.com/coze-dev/coze-studio/backend/domain/knowledge/repository"
 	"github.com/coze-dev/coze-studio/backend/infra/cache"
@@ -51,7 +49,6 @@ import (
 	"github.com/coze-dev/coze-studio/backend/infra/document/progressbar"
 	"github.com/coze-dev/coze-studio/backend/infra/document/rerank"
 	"github.com/coze-dev/coze-studio/backend/infra/document/searchstore"
-	"github.com/coze-dev/coze-studio/backend/infra/eventbus"
 	"github.com/coze-dev/coze-studio/backend/infra/idgen"
 	"github.com/coze-dev/coze-studio/backend/infra/rdb"
 	rdbEntity "github.com/coze-dev/coze-studio/backend/infra/rdb/entity"
@@ -63,7 +60,7 @@ import (
 	"github.com/coze-dev/coze-studio/backend/types/errno"
 )
 
-func NewKnowledgeSVC(config *KnowledgeSVCConfig) (Knowledge, eventbus.ConsumerHandler) {
+func NewKnowledgeSVC(config *KnowledgeSVCConfig) Knowledge {
 	svc := &knowledgeSVC{
 		knowledgeRepo:       repository.NewKnowledgeDAO(config.DB),
 		documentRepo:        repository.NewKnowledgeDocumentDAO(config.DB),
@@ -71,7 +68,6 @@ func NewKnowledgeSVC(config *KnowledgeSVCConfig) (Knowledge, eventbus.ConsumerHa
 		reviewRepo:          repository.NewKnowledgeDocumentReviewDAO(config.DB),
 		idgen:               config.IDGen,
 		rdb:                 config.RDB,
-		producer:            config.Producer,
 		searchStoreManagers: config.SearchStoreManagers,
 		parseManager:        config.ParseManager,
 		storage:             config.Storage,
@@ -82,14 +78,13 @@ func NewKnowledgeSVC(config *KnowledgeSVCConfig) (Knowledge, eventbus.ConsumerHa
 		cacheCli:            config.CacheCli,
 	}
 
-	return svc, svc
+	return svc
 }
 
 type KnowledgeSVCConfig struct {
 	DB                  *gorm.DB                       // required
 	IDGen               idgen.IDGenerator              // required
 	RDB                 rdb.RDB                        // Required: Form storage
-	Producer            eventbus.Producer              // Required: Document indexing process goes through mq asynchronous processing
 	SearchStoreManagers []searchstore.Manager          // Required: Vector/Full Text
 	ParseManager        parser.Manager                 // Optional: document segmentation and processing capability, default builtin parser
 	Storage             storage.Storage                // required: oss
@@ -108,7 +103,6 @@ type knowledgeSVC struct {
 
 	idgen               idgen.IDGenerator
 	rdb                 rdb.RDB
-	producer            eventbus.Producer
 	searchStoreManagers []searchstore.Manager
 	parseManager        parser.Manager
 	rewriter            messages2query.MessagesToQuery
@@ -332,7 +326,7 @@ func (k *knowledgeSVC) CreateDocument(ctx context.Context, request *CreateDocume
 		DocumentRepo:   k.documentRepo,
 		SliceRepo:      k.sliceRepo,
 		Idgen:          k.idgen,
-		Producer:       k.producer,
+		IndexDocuments: k.indexDocuments,
 		ParseManager:   k.parseManager,
 		Storage:        k.storage,
 		Rdb:            k.rdb,
@@ -579,11 +573,6 @@ func (k *knowledgeSVC) ResegmentDocument(ctx context.Context, request *Resegment
 	}
 	docEntity.ChunkingStrategy = request.ChunkingStrategy
 	docEntity.ParsingStrategy = request.ParsingStrategy
-	event := events.NewIndexDocumentEvent(docEntity.KnowledgeID, docEntity)
-	body, err := sonic.Marshal(event)
-	if err != nil {
-		return nil, errorx.New(errno.ErrKnowledgeParseJSONCode, errorx.KV("msg", err.Error()))
-	}
 	doc.ParseRule.ChunkingStrategy = request.ChunkingStrategy
 	doc.ParseRule.ParsingStrategy = request.ParsingStrategy
 	doc.Status = int32(entity.DocumentStatusChunking)
@@ -591,8 +580,8 @@ func (k *knowledgeSVC) ResegmentDocument(ctx context.Context, request *Resegment
 	if err != nil {
 		return nil, errorx.New(errno.ErrKnowledgeDBCode, errorx.KV("msg", err.Error()))
 	}
-	if err = k.producer.Send(ctx, body, eventbus.WithShardingKey(strconv.FormatInt(docEntity.KnowledgeID, 10))); err != nil {
-		return nil, errorx.New(errno.ErrKnowledgeMQSendFailCode, errorx.KV("msg", err.Error()))
+	if err = k.indexDocument(ctx, docEntity); err != nil {
+		return nil, err
 	}
 	docEntity.Status = entity.DocumentStatusChunking
 	return &ResegmentDocumentResponse{
@@ -683,7 +672,6 @@ func (k *knowledgeSVC) CreateSlice(ctx context.Context, request *CreateSliceRequ
 		logs.CtxErrorf(ctx, "fromModelDocument failed, err: %v", err)
 		return nil, err
 	}
-	indexSliceEvent := events.NewIndexSliceEvent(&sliceEntity, docEntity)
 	if docInfo.DocumentType == int32(knowledgeModel.DocumentTypeText) ||
 		docInfo.DocumentType == int32(knowledgeModel.DocumentTypeTable) {
 		sliceInfo.Content = sliceEntity.GetSliceContent()
@@ -701,14 +689,9 @@ func (k *knowledgeSVC) CreateSlice(ctx context.Context, request *CreateSliceRequ
 		logs.CtxErrorf(ctx, "create slice failed, err: %v", err)
 		return nil, errorx.New(errno.ErrKnowledgeDBCode, errorx.KV("msg", err.Error()))
 	}
-	body, err := sonic.Marshal(&indexSliceEvent)
-	if err != nil {
-		logs.CtxErrorf(ctx, "marshal event failed, err: %v", err)
-		return nil, errorx.New(errno.ErrKnowledgeParseJSONCode, errorx.KV("msg", err.Error()))
-	}
-	if err = k.producer.Send(ctx, body, eventbus.WithShardingKey(strconv.FormatInt(sliceInfo.DocumentID, 10))); err != nil {
-		logs.CtxErrorf(ctx, "send message failed, err: %v", err)
-		return nil, errorx.New(errno.ErrKnowledgeMQSendFailCode, errorx.KV("msg", err.Error()))
+	if err = k.indexSlice(ctx, &sliceEntity, docEntity); err != nil {
+		logs.CtxErrorf(ctx, "index slice failed, err: %v", err)
+		return nil, err
 	}
 	if err = k.documentRepo.UpdateDocumentSliceInfo(ctx, docInfo.ID); err != nil {
 		logs.CtxErrorf(ctx, "update document slice info failed, err: %v", err)
@@ -755,17 +738,17 @@ func (k *knowledgeSVC) UpdateSlice(ctx context.Context, request *UpdateSliceRequ
 	}
 	sliceInfo[0].UpdatedAt = time.Now().UnixMilli()
 	sliceInfo[0].Status = int32(knowledgeModel.SliceStatusInit)
-	indexSliceEvent := events.NewIndexSliceEvent(&entity.Slice{
+	sliceEntity := &entity.Slice{
 		Info: knowledgeModel.Info{
 			ID: sliceInfo[0].ID,
 		},
 		KnowledgeID: sliceInfo[0].KnowledgeID,
 		DocumentID:  sliceInfo[0].DocumentID,
 		RawContent:  request.RawContent,
-	}, docEntity)
+	}
 	if docInfo.DocumentType == int32(knowledgeModel.DocumentTypeTable) {
-		indexSliceEvent.Slice.ID = sliceInfo[0].ID
-		err = k.upsertDataToTable(ctx, docInfo.TableInfo, []*entity.Slice{indexSliceEvent.Slice})
+		sliceEntity.ID = sliceInfo[0].ID
+		err = k.upsertDataToTable(ctx, docInfo.TableInfo, []*entity.Slice{sliceEntity})
 		if err != nil {
 			logs.CtxErrorf(ctx, "upsert data to table failed, err: %v", err)
 			return err
@@ -776,14 +759,9 @@ func (k *knowledgeSVC) UpdateSlice(ctx context.Context, request *UpdateSliceRequ
 		logs.CtxErrorf(ctx, "update slice failed, err: %v", err)
 		return errorx.New(errno.ErrKnowledgeDBCode, errorx.KV("msg", err.Error()))
 	}
-	body, err := sonic.Marshal(&indexSliceEvent)
-	if err != nil {
-		logs.CtxErrorf(ctx, "marshal event failed, err: %v", err)
-		return errorx.New(errno.ErrKnowledgeParseJSONCode, errorx.KV("msg", err.Error()))
-	}
-	if err = k.producer.Send(ctx, body, eventbus.WithShardingKey(strconv.FormatInt(sliceInfo[0].DocumentID, 10))); err != nil {
-		logs.CtxErrorf(ctx, "send message failed, err: %v", err)
-		return errorx.New(errno.ErrKnowledgeMQSendFailCode, errorx.KV("msg", err.Error()))
+	if err = k.indexSlice(ctx, sliceEntity, docEntity); err != nil {
+		logs.CtxErrorf(ctx, "index slice failed, err: %v", err)
+		return err
 	}
 	if err = k.documentRepo.UpdateDocumentSliceInfo(ctx, docInfo.ID); err != nil {
 		logs.CtxErrorf(ctx, "update document slice info failed, err: %v", err)
@@ -1029,16 +1007,9 @@ func (k *knowledgeSVC) CreateDocumentReview(ctx context.Context, request *Create
 			},
 			Source: entity.DocumentSourceLocal,
 		}
-		reviewEvent := events.NewDocumentReviewEvent(doc, review)
-		body, err := sonic.Marshal(&reviewEvent)
-		if err != nil {
-			logs.CtxErrorf(ctx, "marshal event failed, err: %v", err)
-			return nil, errorx.New(errno.ErrKnowledgeParseJSONCode, errorx.KV("msg", err.Error()))
-		}
-		err = k.producer.Send(ctx, body)
-		if err != nil {
-			logs.CtxErrorf(ctx, "send message failed, err: %v", err)
-			return nil, errorx.New(errno.ErrKnowledgeMQSendFailCode, errorx.KV("msg", err.Error()))
+		if err = k.documentReviewEventHandler(ctx, doc, review); err != nil {
+			logs.CtxErrorf(ctx, "document review event handler failed, err: %v", err)
+			return nil, err
 		}
 	}
 	return &CreateDocumentReviewResponse{
@@ -1174,17 +1145,7 @@ func (k *knowledgeSVC) documentsURL2URI(ctx context.Context, docs []*entity.Docu
 }
 
 func (k *knowledgeSVC) emitDeleteKnowledgeDataEvent(ctx context.Context, knowledgeID int64, sliceIDs []int64, shardingKey string) error {
-	deleteSliceEvent := events.NewDeleteKnowledgeDataEvent(knowledgeID, sliceIDs)
-	body, err := sonic.Marshal(&deleteSliceEvent)
-	if err != nil {
-		logs.CtxErrorf(ctx, "marshal event failed, err: %v", err)
-		return errorx.New(errno.ErrKnowledgeParseJSONCode, errorx.KV("msg", err.Error()))
-	}
-	if err = k.producer.Send(ctx, body, eventbus.WithShardingKey(shardingKey)); err != nil {
-		logs.CtxErrorf(ctx, "send message failed, err: %v", err)
-		return errorx.New(errno.ErrKnowledgeMQSendFailCode, errorx.KV("msg", err.Error()))
-	}
-	return nil
+	return k.deleteKnowledgeDataEventHandler(ctx, knowledgeID, sliceIDs)
 }
 
 func (k *knowledgeSVC) fromModelKnowledge(ctx context.Context, knowledge *model.Knowledge) (*knowledgeModel.Knowledge, error) {

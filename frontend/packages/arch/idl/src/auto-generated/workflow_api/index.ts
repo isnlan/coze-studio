@@ -1944,29 +1944,6 @@ export default class WorkflowApiService<T> {
     return this.request({ url, method, data }, options);
   }
 
-  /**
-   * POST /api/workflow_api/example_workflow_list
-   *
-   * 获取示例流程列表
-   */
-  GetExampleWorkFlowList(
-    req?: workflow.GetExampleWorkFlowListRequest,
-    options?: T,
-  ): Promise<workflow.GetExampleWorkFlowListResponse> {
-    const _req = req || {};
-    const url = this.genBaseURL('/api/workflow_api/example_workflow_list');
-    const method = 'POST';
-    const data = {
-      page: _req['page'],
-      size: _req['size'],
-      name: _req['name'],
-      flow_mode: _req['flow_mode'],
-      checker: _req['checker'],
-      Base: _req['Base'],
-    };
-    return this.request({ url, method, data }, options);
-  }
-
   /** GET /api/op_workflow/get_trigger */
   OPGetTrigger(
     req: trigger.GetTriggerRequest,
@@ -2063,25 +2040,6 @@ export default class WorkflowApiService<T> {
     const url = this.genBaseURL('/api/op_workflow/remove_example_workflow');
     const method = 'POST';
     const data = { workflow_id: _req['workflow_id'], Base: _req['Base'] };
-    return this.request({ url, method, data }, options);
-  }
-
-  /** POST /api/op_workflow/example_workflow_list */
-  OPGetExampleWorkFlowList(
-    req?: workflow.GetExampleWorkFlowListRequest,
-    options?: T,
-  ): Promise<workflow.GetExampleWorkFlowListResponse> {
-    const _req = req || {};
-    const url = this.genBaseURL('/api/op_workflow/example_workflow_list');
-    const method = 'POST';
-    const data = {
-      page: _req['page'],
-      size: _req['size'],
-      name: _req['name'],
-      flow_mode: _req['flow_mode'],
-      checker: _req['checker'],
-      Base: _req['Base'],
-    };
     return this.request({ url, method, data }, options);
   }
 

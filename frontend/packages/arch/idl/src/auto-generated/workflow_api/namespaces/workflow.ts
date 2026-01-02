@@ -1926,27 +1926,6 @@ export interface GetEnvListResponse {
   BaseResp: base.BaseResp;
 }
 
-export interface GetExampleWorkFlowListRequest {
-  /** 分页功能，指定希望获取的结果列表的页码。 */
-  page?: number;
-  /** 分页功能，指定每页返回的条目数量, 必须大于0，小于等于100 */
-  size?: number;
-  /** 根据工作流的名称来筛选示例工作流列表。 */
-  name?: string;
-  /** 根据工作流的模式（例如：标准工作流、对话流等）筛选示例工作流列表。 */
-  flow_mode?: WorkflowMode;
-  /** Bot的 Workflow as Agent模式会使用，只会使用BotAgent = 3的场景 */
-  checker?: Array<CheckType>;
-  Base?: base.Base;
-}
-
-export interface GetExampleWorkFlowListResponse {
-  data: WorkFlowListData;
-  code: Int64;
-  msg: string;
-  BaseResp: base.BaseResp;
-}
-
 export interface GetExecuteHistoryListRequest {
   workflow_id?: string;
   execute_id?: string;

@@ -5,7 +5,4 @@ metadata:
   labels:
     {{- include "opencoze.labels" . | nindent 4 }}
 data:
-{{- range $path, $_ := .Files.Glob "files/conf/model/*" }}
-  {{ base $path }}: |-
-{{ $.Files.Get $path | indent 4 }}
-{{- end }}
+{{- (.Files.Glob "files/conf/*").AsConfig | nindent 2 }}

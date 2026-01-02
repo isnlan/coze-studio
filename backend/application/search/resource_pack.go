@@ -59,7 +59,7 @@ func NewResourcePacker(resID int64, t common.ResType, appContext *ServiceCompone
 	switch t {
 	case common.ResType_Plugin:
 		return &pluginPacker{resourceBasePacker: base}, nil
-	case common.ResType_Workflow:
+	case common.ResType_Workflow, common.ResType_Imageflow:
 		return &workflowPacker{resourceBasePacker: base}, nil
 	case common.ResType_Knowledge:
 		return &knowledgePacker{resourceBasePacker: base}, nil

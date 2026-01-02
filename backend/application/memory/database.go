@@ -24,7 +24,6 @@ import (
 	"github.com/coze-dev/coze-studio/backend/api/model/data/database/table"
 	"github.com/coze-dev/coze-studio/backend/api/model/data/knowledge"
 	document "github.com/coze-dev/coze-studio/backend/api/model/data/knowledge"
-	resCommon "github.com/coze-dev/coze-studio/backend/api/model/resource/common"
 	"github.com/coze-dev/coze-studio/backend/application/base/ctxutil"
 	"github.com/coze-dev/coze-studio/backend/application/search"
 	model "github.com/coze-dev/coze-studio/backend/crossdomain/database/model"
@@ -32,7 +31,6 @@ import (
 	"github.com/coze-dev/coze-studio/backend/domain/memory/database/entity"
 	databaseEntity "github.com/coze-dev/coze-studio/backend/domain/memory/database/entity"
 	database "github.com/coze-dev/coze-studio/backend/domain/memory/database/service"
-	searchEntity "github.com/coze-dev/coze-studio/backend/domain/search/entity"
 	"github.com/coze-dev/coze-studio/backend/pkg/errorx"
 	"github.com/coze-dev/coze-studio/backend/pkg/lang/conv"
 	"github.com/coze-dev/coze-studio/backend/pkg/lang/ptr"
@@ -166,28 +164,6 @@ func (d *DatabaseApplicationService) AddDatabase(ctx context.Context, req *table
 	}
 
 	databaseRes := res.Database
-	var ptrAppID *int64
-	if databaseRes.AppID != 0 {
-		ptrAppID = ptr.Of(databaseRes.AppID)
-	}
-	err = d.eventbus.PublishResources(ctx, &searchEntity.ResourceDomainEvent{
-		OpType: searchEntity.Created,
-		Resource: &searchEntity.ResourceDocument{
-			ResType:       resCommon.ResType_Database,
-			ResID:         databaseRes.ID,
-			Name:          &databaseRes.TableName,
-			APPID:         ptrAppID,
-			SpaceID:       &databaseRes.SpaceID,
-			OwnerID:       &databaseRes.CreatorID,
-			PublishStatus: ptr.Of(resCommon.PublishStatus_Published),
-			CreateTimeMS:  ptr.Of(databaseRes.CreatedAtMs),
-			UpdateTimeMS:  ptr.Of(databaseRes.UpdatedAtMs),
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("publish resource failed, err=%w", err)
-	}
-
 	return ConvertDatabaseRes(databaseRes), nil
 }
 
@@ -202,20 +178,6 @@ func (d *DatabaseApplicationService) UpdateDatabase(ctx context.Context, req *ta
 		return nil, err
 	}
 
-	databaseRes := res.Database
-	err = d.eventbus.PublishResources(ctx, &searchEntity.ResourceDomainEvent{
-		OpType: searchEntity.Updated,
-		Resource: &searchEntity.ResourceDocument{
-			ResType:      resCommon.ResType_Database,
-			ResID:        databaseRes.ID,
-			Name:         &databaseRes.TableName,
-			UpdateTimeMS: ptr.Of(databaseRes.UpdatedAtMs),
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("publish resource failed, err=%w", err)
-	}
-
 	return convertUpdateDatabaseResult(res), nil
 }
 
@@ -227,17 +189,6 @@ func (d *DatabaseApplicationService) DeleteDatabase(ctx context.Context, req *ta
 
 	err = d.DomainSVC.DeleteDatabase(ctx, &database.DeleteDatabaseRequest{
 		ID: req.ID,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	err = d.eventbus.PublishResources(ctx, &searchEntity.ResourceDomainEvent{
-		OpType: searchEntity.Deleted,
-		Resource: &searchEntity.ResourceDocument{
-			ResType: resCommon.ResType_Database,
-			ResID:   req.ID,
-		},
 	})
 	if err != nil {
 		return nil, err
@@ -832,25 +783,11 @@ func (d *DatabaseApplicationService) ValidateAccess(ctx context.Context, databas
 }
 
 func (d *DatabaseApplicationService) DeleteDatabaseByAppID(ctx context.Context, appID int64) error {
-	resp, err := d.DomainSVC.DeleteDatabaseByAppID(ctx, &database.DeleteDatabaseByAppIDRequest{
+	_, err := d.DomainSVC.DeleteDatabaseByAppID(ctx, &database.DeleteDatabaseByAppIDRequest{
 		AppID: appID,
 	})
 	if err != nil {
 		return err
-	}
-
-	deletedIDs := resp.DeletedDatabaseIDs
-	for _, deletedID := range deletedIDs {
-		err = d.eventbus.PublishResources(ctx, &searchEntity.ResourceDomainEvent{
-			OpType: searchEntity.Deleted,
-			Resource: &searchEntity.ResourceDocument{
-				ResType: resCommon.ResType_Database,
-				ResID:   deletedID,
-			},
-		})
-		if err != nil {
-			return err
-		}
 	}
 
 	return nil
@@ -913,24 +850,6 @@ func (d *DatabaseApplicationService) CopyDatabase(ctx context.Context, req *Copy
 		draftDatabase := draftResp.Database
 		draftMaps[originalDraftID] = draftDatabase.ID
 		onlineMaps[originalOnlineID] = onlineDatabase.ID
-
-		err = d.eventbus.PublishResources(ctx, &searchEntity.ResourceDomainEvent{
-			OpType: searchEntity.Created,
-			Resource: &searchEntity.ResourceDocument{
-				ResType:       resCommon.ResType_Database,
-				ResID:         onlineDatabase.ID,
-				Name:          &onlineDatabase.TableName,
-				APPID:         &onlineDatabase.AppID,
-				SpaceID:       &onlineDatabase.SpaceID,
-				OwnerID:       &onlineDatabase.CreatorID,
-				PublishStatus: ptr.Of(resCommon.PublishStatus_Published),
-				CreateTimeMS:  ptr.Of(onlineDatabase.CreatedAtMs),
-				UpdateTimeMS:  ptr.Of(onlineDatabase.UpdatedAtMs),
-			},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("publish resource failed, err=%w", err)
-		}
 	}
 
 	if !req.IsCopyData {
@@ -1036,21 +955,6 @@ func (d *DatabaseApplicationService) MoveDatabaseToLibrary(ctx context.Context, 
 
 		onlineDatabase := moveDatabaseResp.Database
 		moveDatabases = append(moveDatabases, onlineDatabase)
-		// publish resource event
-		err = d.eventbus.PublishResources(ctx, &searchEntity.ResourceDomainEvent{
-			OpType: searchEntity.Updated,
-			Resource: &searchEntity.ResourceDocument{
-				ResType:      resCommon.ResType_Database,
-				ResID:        onlineDatabase.ID,
-				Name:         &onlineDatabase.TableName,
-				APPID:        &onlineDatabase.AppID,
-				SpaceID:      &onlineDatabase.SpaceID,
-				UpdateTimeMS: &onlineDatabase.UpdatedAtMs,
-			},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("publish resource failed, err=%w", err)
-		}
 	}
 
 	return &MoveDatabaseToLibraryResponse{

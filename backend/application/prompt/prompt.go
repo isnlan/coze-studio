@@ -20,12 +20,10 @@ import (
 	"context"
 
 	"github.com/coze-dev/coze-studio/backend/api/model/playground"
-	"github.com/coze-dev/coze-studio/backend/api/model/resource/common"
 	"github.com/coze-dev/coze-studio/backend/application/base/ctxutil"
 	"github.com/coze-dev/coze-studio/backend/application/search"
 	"github.com/coze-dev/coze-studio/backend/domain/prompt/entity"
 	prompt "github.com/coze-dev/coze-studio/backend/domain/prompt/service"
-	searchEntity "github.com/coze-dev/coze-studio/backend/domain/search/entity"
 	"github.com/coze-dev/coze-studio/backend/pkg/errorx"
 	"github.com/coze-dev/coze-studio/backend/pkg/lang/ptr"
 	"github.com/coze-dev/coze-studio/backend/pkg/lang/slices"
@@ -54,21 +52,6 @@ func (p *PromptApplicationService) UpsertPromptResource(ctx context.Context, req
 			return nil, err
 		}
 
-		pErr := p.eventbus.PublishResources(ctx, &searchEntity.ResourceDomainEvent{
-			OpType: searchEntity.Created,
-			Resource: &searchEntity.ResourceDocument{
-				ResType:       common.ResType_Prompt,
-				ResID:         resp.Data.ID,
-				Name:          req.Prompt.Name,
-				SpaceID:       req.Prompt.SpaceID,
-				OwnerID:       &session.UserID,
-				PublishStatus: ptr.Of(common.PublishStatus_Published),
-			},
-		})
-		if pErr != nil {
-			logs.CtxErrorf(ctx, "publish resource event failed: %v", pErr)
-		}
-
 		return resp, nil
 	}
 
@@ -76,19 +59,6 @@ func (p *PromptApplicationService) UpsertPromptResource(ctx context.Context, req
 	resp, err = p.updatePromptResource(ctx, req)
 	if err != nil {
 		return nil, err
-	}
-
-	pErr := p.eventbus.PublishResources(ctx, &searchEntity.ResourceDomainEvent{
-		OpType: searchEntity.Updated,
-		Resource: &searchEntity.ResourceDocument{
-			ResType: common.ResType_Prompt,
-			ResID:   resp.Data.ID,
-			Name:    req.Prompt.Name,
-			SpaceID: req.Prompt.SpaceID,
-		},
-	})
-	if pErr != nil {
-		logs.CtxErrorf(ctx, "publish resource event failed: %v", pErr)
 	}
 
 	return resp, nil
@@ -156,17 +126,6 @@ func (p *PromptApplicationService) DeletePromptResource(ctx context.Context, req
 	err = p.DomainSVC.DeletePromptResource(ctx, req.GetPromptResourceID())
 	if err != nil {
 		return nil, err
-	}
-
-	pErr := p.eventbus.PublishResources(ctx, &searchEntity.ResourceDomainEvent{
-		OpType: searchEntity.Deleted,
-		Resource: &searchEntity.ResourceDocument{
-			ResType: common.ResType_Prompt,
-			ResID:   req.GetPromptResourceID(),
-		},
-	})
-	if pErr != nil {
-		logs.CtxErrorf(ctx, "publish resource event failed: %v", pErr)
 	}
 
 	return &playground.DeletePromptResourceResponse{

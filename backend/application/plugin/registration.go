@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/bytedance/sonic"
 	"github.com/getkin/kin-openapi/openapi3"
@@ -28,13 +27,11 @@ import (
 
 	pluginAPI "github.com/coze-dev/coze-studio/backend/api/model/plugin_develop"
 	common "github.com/coze-dev/coze-studio/backend/api/model/plugin_develop/common"
-	resCommon "github.com/coze-dev/coze-studio/backend/api/model/resource/common"
 	"github.com/coze-dev/coze-studio/backend/application/base/ctxutil"
 	"github.com/coze-dev/coze-studio/backend/crossdomain/plugin/consts"
 	"github.com/coze-dev/coze-studio/backend/crossdomain/plugin/convert"
 	"github.com/coze-dev/coze-studio/backend/crossdomain/plugin/model"
 	"github.com/coze-dev/coze-studio/backend/domain/plugin/dto"
-	searchEntity "github.com/coze-dev/coze-studio/backend/domain/search/entity"
 	"github.com/coze-dev/coze-studio/backend/pkg/errorx"
 	"github.com/coze-dev/coze-studio/backend/pkg/lang/ptr"
 	commonConsts "github.com/coze-dev/coze-studio/backend/types/consts"
@@ -98,24 +95,6 @@ func (p *PluginApplicationService) RegisterPluginMeta(ctx context.Context, req *
 		return nil, errorx.Wrapf(err, "CreateDraftPlugin failed")
 	}
 
-	err = p.eventbus.PublishResources(ctx, &searchEntity.ResourceDomainEvent{
-		OpType: searchEntity.Created,
-		Resource: &searchEntity.ResourceDocument{
-			ResType:       resCommon.ResType_Plugin,
-			ResSubType:    ptr.Of(int32(req.GetPluginType())),
-			ResID:         pluginID,
-			Name:          &req.Name,
-			SpaceID:       &req.SpaceID,
-			APPID:         req.ProjectID,
-			OwnerID:       userID,
-			PublishStatus: ptr.Of(resCommon.PublishStatus_UnPublished),
-			CreateTimeMS:  ptr.Of(time.Now().UnixMilli()),
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("publish resource '%d' failed, err=%v", pluginID, err)
-	}
-
 	resp = &pluginAPI.RegisterPluginMetaResponse{
 		PluginID: pluginID,
 	}
@@ -151,24 +130,6 @@ func (p *PluginApplicationService) RegisterPlugin(ctx context.Context, req *plug
 	})
 	if err != nil {
 		return nil, errorx.Wrapf(err, "CreateDraftPluginWithCode failed")
-	}
-
-	err = p.eventbus.PublishResources(ctx, &searchEntity.ResourceDomainEvent{
-		OpType: searchEntity.Created,
-		Resource: &searchEntity.ResourceDocument{
-			ResType:       resCommon.ResType_Plugin,
-			ResSubType:    ptr.Of(int32(res.Plugin.PluginType)),
-			ResID:         res.Plugin.ID,
-			Name:          ptr.Of(res.Plugin.GetName()),
-			APPID:         req.ProjectID,
-			SpaceID:       &req.SpaceID,
-			OwnerID:       userID,
-			PublishStatus: ptr.Of(resCommon.PublishStatus_UnPublished),
-			CreateTimeMS:  ptr.Of(time.Now().UnixMilli()),
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("publish resource '%d' failed, err=%v", res.Plugin.ID, err)
 	}
 
 	resp = &pluginAPI.RegisterPluginResponse{

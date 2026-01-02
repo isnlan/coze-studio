@@ -32,6 +32,8 @@ elif [[ "$APP_ENV" == "oceanbase" ]]; then
     ENV_FILE="$DOCKER_DIR/.env"
 fi
 
+echo $ENV_FILE
+
 source "$ENV_FILE"
 
 if [[ "$CODE_RUNNER_TYPE" == "sandbox" ]] && ! command -v deno &> /dev/null; then

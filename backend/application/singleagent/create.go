@@ -22,12 +22,10 @@ import (
 
 	"github.com/coze-dev/coze-studio/backend/api/model/app/bot_common"
 	"github.com/coze-dev/coze-studio/backend/api/model/app/developer_api"
-	intelligence "github.com/coze-dev/coze-studio/backend/api/model/app/intelligence/common"
 	"github.com/coze-dev/coze-studio/backend/application/base/ctxutil"
 	"github.com/coze-dev/coze-studio/backend/bizpkg/config"
 	singleagent "github.com/coze-dev/coze-studio/backend/crossdomain/agent/model"
 	"github.com/coze-dev/coze-studio/backend/domain/agent/singleagent/entity"
-	searchEntity "github.com/coze-dev/coze-studio/backend/domain/search/entity"
 	"github.com/coze-dev/coze-studio/backend/pkg/errorx"
 	"github.com/coze-dev/coze-studio/backend/pkg/lang/ptr"
 	"github.com/coze-dev/coze-studio/backend/types/errno"
@@ -50,21 +48,6 @@ func (s *SingleAgentApplicationService) CreateSingleAgentDraft(ctx context.Conte
 
 	userID := ctxutil.MustGetUIDFromCtx(ctx)
 	agentID, err := s.DomainSVC.CreateSingleAgentDraft(ctx, userID, do)
-	if err != nil {
-		return nil, err
-	}
-
-	err = s.appContext.EventBus.PublishProject(ctx, &searchEntity.ProjectDomainEvent{
-		OpType: searchEntity.Created,
-		Project: &searchEntity.ProjectDocument{
-			Status:  intelligence.IntelligenceStatus_Using,
-			Type:    intelligence.IntelligenceType_Bot,
-			ID:      agentID,
-			SpaceID: &req.SpaceID,
-			OwnerID: &userID,
-			Name:    &do.Name,
-		},
-	})
 	if err != nil {
 		return nil, err
 	}

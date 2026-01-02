@@ -26,7 +26,6 @@ import { useTemplateService } from '@/hooks/use-template-service';
 import { useFloatLayoutService } from '@/hooks/use-float-layout-service';
 import { useGlobalState } from '@/hooks';
 
-import { useWorkflowTemplateList } from '../template-panel/use-workflow-template-list';
 import { FloatPanel } from './float-panel';
 
 import styles from './float-layout.module.less';
@@ -39,7 +38,7 @@ export const FloatLayout: React.FC<
   React.PropsWithChildren<FloatLayoutProps>
 > = ({ components, children }) => {
   const ref = useRef<HTMLDivElement>(null);
-  const { isInitWorkflow, spaceId, flowMode } = useGlobalState();
+  const { isInitWorkflow } = useGlobalState();
 
   const floatLayoutService = useFloatLayoutService();
   const templateState = useTemplateService();
@@ -57,28 +56,15 @@ export const FloatLayout: React.FC<
     }
   }, [size, floatLayoutService]);
 
-  const { workflowTemplateList } = useWorkflowTemplateList({
-    spaceId,
-    flowMode,
-    isInitWorkflow,
-  });
-
   useEffect(() => {
-    if (isInitWorkflow) {
-      if (!workflowTemplateList?.length) {
-        return;
-      }
-      templateState.setTemplateList(workflowTemplateList);
-      floatLayoutService.open('templatePanel', 'bottom');
-      templateState.openTemplate();
-    } else {
+    if (!isInitWorkflow) {
       templateState.closeTemplate();
       // Process template closing animation for 200 ms, close bottom panel after animation
       setTimeout(() => {
         floatLayoutService.close('bottom');
       }, 300);
     }
-  }, [isInitWorkflow, workflowTemplateList, floatLayoutService, templateState]);
+  }, [isInitWorkflow, floatLayoutService, templateState]);
 
   return (
     <div className={styles['float-layout']} ref={ref}>
